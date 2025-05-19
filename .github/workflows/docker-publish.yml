@@ -41,18 +41,24 @@ jobs:
 
       # 为 Docker 镜像提取元数据 (标签、名称等)
       - name: Extract metadata (tags, labels) for Docker
-        id: meta # 给这个步骤一个 ID，方便后续引用其输出
+        id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/chain-subconverter # 镜像名称格式：ghcr.io/OWNER/IMAGE_NAME
-          # images: ghcr.io/${{ github.actor }}/chain-subconverter # 或者用 github.actor (触发者)
-          # images: ghcr.io/your-username-or-org/chain-subconverter # 或者硬编码
+          images: ghcr.io/${{ github.repository_owner }}/chain-subconverter
 
-          # 定义标签规则
+          # 定义标签规则 - 使用显式列表覆盖默认规则
           tags: |
-            type=semver,pattern={{version}} # 如果是 Git 标签 (例如 v1.2.3)，则使用版本号
-            type=sha,format=short
-            type=ref,event=branch,enable=${{ github.ref_name == 'main' }},value=latest
+            # 1. 如果是 Git 标签 (例如 v1.2.3)，则使用版本号
+            type=semver,pattern={{version}}
+
+            # 2. 仅在推送到 main 分支 (非 PR) 时生成 'latest' 标签
+            #    通过提高优先级确保此规则生效并生成 latest
+            type=ref,event=branch,enable=${{ github.ref_name == 'main' && github.event_name != 'pull_request' }},value=latest,priority=700
+
+            # 3. 生成短 SHA 标签
+            type=sha,format=short,prefix=sha-
+
+          # 注意：因为提供了上面的显式标签列表，metadata-action 将不再自动生成分支名标签 (如 'main')。
 
       # 构建并推送 Docker 镜像
       - name: Build and push Docker image
