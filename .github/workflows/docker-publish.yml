@@ -51,6 +51,7 @@ jobs:
           # 定义标签规则
           tags: |
             type=semver,pattern={{version}} # 如果是 Git 标签 (例如 v1.2.3)，则使用版本号
+            type=sha,format=short
             type=ref,event=branch,branch=main,value=latest
 
       # 构建并推送 Docker 镜像
