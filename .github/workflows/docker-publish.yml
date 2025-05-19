@@ -51,14 +51,19 @@ jobs:
             # 1. 如果是 Git 标签 (例如 v1.2.3)，则使用版本号
             type=semver,pattern={{version}}
 
-            # 2. 仅在推送到 main 分支 (非 PR) 时生成 'latest' 标签
-            #    通过提高优先级确保此规则生效并生成 latest
-            type=ref,event=branch,enable=${{ github.ref_name == 'main' && github.event_name != 'pull_request' }},value=latest,priority=700
+            # 2. 生成 'latest' 标签。
+            #    使用 type=raw 类型，确保这个标签总是被生成。
+            #    考虑到你的工作流只在 push 到 main 或手动触发时运行，
+            #    这实际上就是将 main 分支的构建标记为 latest。
+            type=raw,value=latest
 
             # 3. 生成短 SHA 标签
             type=sha,format=short,prefix=sha-
 
-          # 注意：因为提供了上面的显式标签列表，metadata-action 将不再自动生成分支名标签 (如 'main')。
+          # !!! 重要 !!!
+          # 通过提供上面这个显式的标签列表，我们期待它能完全覆盖
+          # docker/metadata-action 的默认行为，从而阻止自动生成
+          # 分支名标签 (例如 'main')。
 
       # 构建并推送 Docker 镜像
       - name: Build and push Docker image
