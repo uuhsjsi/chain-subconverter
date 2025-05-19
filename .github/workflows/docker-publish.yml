@@ -57,9 +57,6 @@ jobs:
             #    这实际上就是将 main 分支的构建标记为 latest。
             type=raw,value=latest
 
-            # 3. 生成短 SHA 标签
-            type=sha,format=short,prefix=sha-
-
           # !!! 重要 !!!
           # 通过提供上面这个显式的标签列表，我们期待它能完全覆盖
           # docker/metadata-action 的默认行为，从而阻止自动生成
