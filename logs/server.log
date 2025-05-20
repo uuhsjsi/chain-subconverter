@@ -1,0 +1,3 @@
+2025-05-20 14:49:47,664 - INFO - Environment variables: PORT=11200, REMOTE_URL=<在这里输入你的订阅URL>, MANUAL_DIALER_ENABLED=0, LANDING_NODE_1=, DIALER_NODE_1=, LANDING_NODE_2=, DIALER_NODE_2=
+2025-05-20 14:49:47,672 - INFO - Serving at http://0.0.0.0:11200
+2025-05-20 14:49:47,673 - INFO - Access modified subscription at http://<请在此处输入你的服务器IP>:11200/subscription.yaml

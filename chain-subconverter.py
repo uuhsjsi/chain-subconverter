@@ -60,6 +60,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             try:
                 logger.info(f"Requesting data from {REMOTE_URL}")
                 response = requests.get(REMOTE_URL, timeout=10)
+                response.raise_for_status()  # 抛出 HTTP 错误
                 logger.info(f"Response status code: {response.status_code}")
                 content_type = response.headers.get("Content-Type", "")
                 logger.info(f"Response Content-Type: {content_type}")
@@ -133,6 +134,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_header("Content-Type", "text/yaml; charset=utf-8")
                 self.end_headers()
                 self.wfile.write(modified_yaml.encode("utf-8"))
+            except requests.Timeout:
+                logger.error("Request to REMOTE_URL timed out")
+                self.send_error_response("Request to REMOTE_URL timed out")
             except requests.RequestException as e:
                 logger.error(f"Request error: {str(e)}")
                 self.send_error_response(f"Request error: {str(e)}")
