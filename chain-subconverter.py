@@ -1,11 +1,11 @@
 import http.server
-import socketserver
 import requests
 import logging
 import logging.handlers
 import os
 from ruamel.yaml import YAML
 from ruamel.yaml.compat import StringIO
+from http.server import ThreadingHTTPServer
 
 # 配置日志
 LOG_FILE = "logs/server.log"
@@ -152,7 +152,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(message.encode("utf-8"))
 
 # 启动服务器
-with socketserver.TCPServer(("", PORT), CustomHandler) as httpd:
+with ThreadingHTTPServer(("", PORT), CustomHandler) as httpd:
     logger.info(f"Serving at http://0.0.0.0:{PORT}")
     logger.info(f"Access modified subscription at http://<请在此处输入你的服务器IP>:{PORT}/subscription.yaml")
     httpd.serve_forever()
