@@ -14,12 +14,21 @@ if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-handler = logging.handlers.RotatingFileHandler(
+# 建议通过环境变量控制日志级别，更灵活
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logger.setLevel(LOG_LEVEL)
+
+# 创建并添加文件处理器 (RotatingFileHandler)
+file_handler = logging.handlers.RotatingFileHandler(
     LOG_FILE, maxBytes=1024*1024, backupCount=2, encoding='utf-8'
 )
-handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-logger.addHandler(handler)
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logger.addHandler(file_handler)
+
+# 创建并添加控制台处理器 (StreamHandler)，输出到 stdout
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logger.addHandler(console_handler)
 
 # 配置，从环境变量读取
 PORT = int(os.getenv("PORT", 11200))
@@ -44,15 +53,15 @@ MODIFICATIONS = [
 # 初始化 ruamel.yaml
 yaml = YAML()
 yaml.preserve_quotes = True
-yaml.indent(mapping=2, sequence=4, offset=2)  # 修复 proxy-groups 缩进
-yaml.width = 1000  # 强制内联单行
-yaml.explicit_start = True  # 添加 --- 起始标记
+yaml.indent(mapping=2, sequence=4, offset=2)   # 修复 proxy-groups 缩进
+yaml.width = 1000   # 强制内联单行
+yaml.explicit_start = True   # 添加 --- 起始标记
 
 # 打印环境变量
 logger.info(f"Environment variables: PORT={PORT}, REMOTE_URL={REMOTE_URL}, "
-            f"MANUAL_DIALER_ENABLED={MANUAL_DIALER_ENABLED}, "
-            f"LANDING_NODE_1={LANDING_NODE_1}, DIALER_NODE_1={DIALER_NODE_1}, "
-            f"LANDING_NODE_2={LANDING_NODE_2}, DIALER_NODE_2={DIALER_NODE_2}")
+             f"MANUAL_DIALER_ENABLED={MANUAL_DIALER_ENABLED}, "
+             f"LANDING_NODE_1={LANDING_NODE_1}, DIALER_NODE_1={DIALER_NODE_1}, "
+             f"LANDING_NODE_2={LANDING_NODE_2}, DIALER_NODE_2={DIALER_NODE_2}")
 
 class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
@@ -124,16 +133,13 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 yaml.dump(config, output)
                 modified_yaml = output.getvalue()
 
-                # 保存最新 YAML 到日志目录
-                yaml_file = os.path.join(LOG_DIR, "subscription_latest.yaml")
-                with open(yaml_file, "w", encoding="utf-8") as f:
-                    f.write(modified_yaml)
-                logger.info(f"Saved latest YAML to {yaml_file}")
-
+                # 成功响应时，不保存 YAML 到文件，直接发送给客户端
                 self.send_response(200)
                 self.send_header("Content-Type", "text/yaml; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate") # 添加 Cache-Control
                 self.end_headers()
                 self.wfile.write(modified_yaml.encode("utf-8"))
+
             except requests.Timeout:
                 logger.error("Request to REMOTE_URL timed out")
                 self.send_error_response("Request to REMOTE_URL timed out")
@@ -154,6 +160,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.end_headers()
         self.wfile.write(message.encode("utf-8"))
+
 
 # 启动服务器
 with ThreadingHTTPServer(("", PORT), CustomHandler) as httpd:
