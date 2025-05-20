@@ -15,7 +15,7 @@ COPY chain-subconverter.py ./
 # 设置默认环境变量 (这些可以在 docker run 命令中覆盖)
 ENV PORT=11200
 # 请将下面的 REMOTE_URL 替换为您实际要使用的默认远程订阅链接
-ENV REMOTE_URL="http://example.com/default_subscription.yaml"
+ENV REMOTE_URL="<在这里输入你的订阅URL>"
 ENV MANUAL_DIALER_ENABLED=0
 ENV LANDING_NODE_1=""
 ENV DIALER_NODE_1=""
