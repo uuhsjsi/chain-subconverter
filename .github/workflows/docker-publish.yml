@@ -1,76 +1,70 @@
 name: Build and Push Docker Image to GHCR
 
-# 触发 workflow 的事件
 on:
-  push: # 当有代码推送到指定分支时触发
-    branches: [ "main" ] # 更改为您的主分支名称
-  # 允许手动触发
-  workflow_dispatch:
+  push:
+    branches:
+      - "main" # 推送到 main 分支时触发
+    tags:
+      - 'v*.*.*' # 推送形如 v1.0.0, v1.2.3 等标签时触发
+  workflow_dispatch: # 允许手动触发
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest # 指定运行环境为最新的 Ubuntu
-
-    # 定义权限，允许 workflow 写入 GitHub Packages (ghcr.io)
+    runs-on: ubuntu-latest
     permissions:
-      contents: read      # 读取仓库内容
-      packages: write     # 写入 GitHub Packages (ghcr.io)
+      contents: read
+      packages: write
 
     steps:
-      # 检出代码
       - name: Checkout repository
-        uses: actions/checkout@v4 # 使用官方的 checkout action
+        uses: actions/checkout@v4
+        # 重要：当 Action 由标签触发时，确保 checkout action 获取标签信息
+        # 默认情况下，checkout action 会检出触发工作流的特定 SHA，
+        # 如果是标签，它会检出与该标签关联的提交。
+        # 对于 docker/metadata-action 来说，它能够正确识别标签事件。
 
-      # 登录到 GitHub Container Registry (ghcr.io)
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }} # 使用触发 workflow 的用户作为用户名
-          password: ${{ secrets.GITHUB_TOKEN }} # 使用 GitHub 自动生成的 GITHUB_TOKEN 作为密码
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 必须步骤：设置 QEMU 以支持跨平台模拟构建
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
           platforms: all
 
-      # 设置 Buildx 支持多架构构建
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 为 Docker 镜像提取元数据 (标签、名称等)
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/chain-subconverter
-
-          # 定义标签规则 - 使用显式列表覆盖默认规则
           tags: |
-            # 1. 如果是 Git 标签 (例如 v1.2.3)，则使用版本号
+            # 当事件是推送标签时 (例如 v1.2.3)，使用版本号作为标签
             type=semver,pattern={{version}}
+            # 当推送到 main 分支时，或者任何其他非标签推送（如果配置了）时，打上 latest 标签
+            # 为了确保 'latest' 总是指向 main 分支的最新构建 (如果这是期望行为)
+            # 或者在标签推送时，也将该版本标记为 latest (如果需要)
+            # 如果你希望 'latest' 只在推送到 main 分支时更新，
+            # 并且标签推送时不更新 'latest'，你需要更复杂的条件。
+            # 但通常，最新的发布版本也会被标记为 'latest'。
+            type=raw,value=latest,enable={{is_default_branch}}
+            # 如果你希望每个标签推送也更新 latest，可以去掉 enable={{is_default_branch}}
+            # 或者更明确地：
+            # type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
 
-            # 2. 生成 'latest' 标签。
-            #    使用 type=raw 类型，确保这个标签总是被生成。
-            #    考虑到你的工作流只在 push 到 main 或手动触发时运行，
-            #    这实际上就是将 main 分支的构建标记为 latest。
-            type=raw,value=latest
-
-          # !!! 重要 !!!
-          # 通过提供上面这个显式的标签列表，我们期待它能完全覆盖
-          # docker/metadata-action 的默认行为，从而阻止自动生成
-          # 分支名标签 (例如 'main')。
-
-      # 构建并推送 Docker 镜像
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: . # Dockerfile 的路径 (当前目录)
-          file: ./Dockerfile # Dockerfile 文件名 (如果不是标准的 Dockerfile)
-          push: ${{ github.event_name != 'pull_request' }} # 只在不是 PR 事件时推送 (即 push 到分支或手动触发时)
-          tags: ${{ steps.meta.outputs.tags }} # 使用上一步生成的标签
-          labels: ${{ steps.meta.outputs.labels }} # 使用上一步生成的标签
+          context: .
+          # file: ./Dockerfile # 如果 Dockerfile 名称不是标准的 "Dockerfile"，则取消注释并指定
+          push: true # 我们希望在 main 分支推送和标签推送时都进行推送
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
-          cache-from: type=gha # 启用 GitHub Actions 的构建缓存
-          cache-to: type=gha,mode=max # 写入缓存
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
