@@ -3,25 +3,24 @@ name: Build and Push Docker Image to GHCR
 on:
   push:
     branches:
-      - "main" # 推送到 main 分支时触发
+      - "dev"    # 当代码推送到 dev 分支时触发
     tags:
-      - 'v*.*.*' # 推送形如 v1.0.0, v1.2.3 等标签时触发
+      - 'v*.*.*' # 当推送形如 v1.0.0, v1.2.3 等版本标签时触发
   workflow_dispatch: # 允许手动触发
 
 jobs:
-  build-and-push:
+  build-and-push-dev:
+    # 仅当推送到 dev 分支时运行此 job
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    name: Build and Push Dev Image
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      packages: write # 写入 GitHub Packages (ghcr.io) 的权限
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        # 重要：当 Action 由标签触发时，确保 checkout action 获取标签信息
-        # 默认情况下，checkout action 会检出触发工作流的特定 SHA，
-        # 如果是标签，它会检出与该标签关联的提交。
-        # 对于 docker/metadata-action 来说，它能够正确识别标签事件。
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -38,33 +37,70 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
+      - name: Extract metadata (tags, labels) for Dev Docker Image
+        id: meta_dev
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/chain-subconverter
           tags: |
-            # 当事件是推送标签时 (例如 v1.2.3)，使用版本号作为标签
-            type=semver,pattern={{version}}
-            # 当推送到 main 分支时，或者任何其他非标签推送（如果配置了）时，打上 latest 标签
-            # 为了确保 'latest' 总是指向 main 分支的最新构建 (如果这是期望行为)
-            # 或者在标签推送时，也将该版本标记为 latest (如果需要)
-            # 如果你希望 'latest' 只在推送到 main 分支时更新，
-            # 并且标签推送时不更新 'latest'，你需要更复杂的条件。
-            # 但通常，最新的发布版本也会被标记为 'latest'。
-            type=raw,value=latest,enable={{is_default_branch}}
-            # 如果你希望每个标签推送也更新 latest，可以去掉 enable={{is_default_branch}}
-            # 或者更明确地：
-            # type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=dev  # 为最新的 dev 构建打上 'dev' 标签
+            type=sha,prefix=dev-,format=short # 为每个 dev 构建打上 'dev-<short-sha>' 标签, 例如 dev-a1b2c3d
 
-      - name: Build and push Docker image
+      - name: Build and push Dev Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
-          # file: ./Dockerfile # 如果 Dockerfile 名称不是标准的 "Dockerfile"，则取消注释并指定
-          push: true # 我们希望在 main 分支推送和标签推送时都进行推送
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/amd64,linux/arm64
+          push: true # 推送开发镜像
+          tags: ${{ steps.meta_dev.outputs.tags }}
+          labels: ${{ steps.meta_dev.outputs.labels }}
+          platforms: linux/amd64,linux/arm64 # 根据需要调整平台
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-and-push-release:
+    # 仅当推送版本标签 (v*.*.*) 时运行此 job
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    name: Build and Push Release Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # 写入 GitHub Packages (ghcr.io) 的权限
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: all
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata (tags, labels) for Release Docker Image
+        id: meta_release
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/chain-subconverter
+          tags: |
+            type=semver,pattern={{version}} # 例如 Git 标签 v1.0.0 -> Docker 标签 1.0.0
+            type=raw,value=latest          # 将最新的版本标签也标记为 latest
+
+      - name: Build and push Release Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true # 推送发布镜像
+          tags: ${{ steps.meta_release.outputs.tags }}
+          labels: ${{ steps.meta_release.outputs.labels }}
+          platforms: linux/amd64,linux/arm64 # 根据需要调整平台
           cache-from: type=gha
           cache-to: type=gha,mode=max
