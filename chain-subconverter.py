@@ -3,167 +3,347 @@ import requests
 import logging
 import logging.handlers
 import os
+import re # 确保 re 模块已导入
 from ruamel.yaml import YAML
 from ruamel.yaml.compat import StringIO
 from http.server import ThreadingHTTPServer
+from urllib.parse import urlparse, parse_qs, unquote
 
-# 配置日志
+# --- 配置日志开始 ---
 LOG_FILE = "logs/server.log"
 LOG_DIR = os.path.dirname(LOG_FILE)
 if not os.path.exists(LOG_DIR):
     os.makedirs(LOG_DIR)
 
 logger = logging.getLogger(__name__)
-# 建议通过环境变量控制日志级别，更灵活
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logger.setLevel(LOG_LEVEL)
 
-# 创建并添加文件处理器 (RotatingFileHandler)
 file_handler = logging.handlers.RotatingFileHandler(
     LOG_FILE, maxBytes=1024*1024, backupCount=2, encoding='utf-8'
 )
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 logger.addHandler(file_handler)
 
-# 创建并添加控制台处理器 (StreamHandler)，输出到 stdout
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 logger.addHandler(console_handler)
+# --- 配置日志结束 ---
 
-# 配置，从环境变量读取
+# --- 全局配置 ---
 PORT = int(os.getenv("PORT", 11200))
-REMOTE_URL = os.getenv(
-    "REMOTE_URL",
-    "<在这里输入你的订阅URL>"
-)
-MANUAL_DIALER_ENABLED = int(os.getenv("MANUAL_DIALER_ENABLED", 0))
-LANDING_NODE_1 = os.getenv("LANDING_NODE_1", "")
-DIALER_NODE_1 = os.getenv("DIALER_NODE_1", "")
-LANDING_NODE_2 = os.getenv("LANDING_NODE_2", "")
-DIALER_NODE_2 = os.getenv("DIALER_NODE_2", "")
-MODIFICATIONS = [
-    {"keywords": ["Landing", "落地"], "region_keywords": ["HK", "香港"], "dialer_proxy": "🇭🇰 香港节点"},
-    {"keywords": ["Landing", "落地"], "region_keywords": ["US", "美国"], "dialer_proxy": "🇺🇸 美国节点"},
-    {"keywords": ["Landing", "落地"], "region_keywords": ["JP", "日本"], "dialer_proxy": "🇯🇵 日本节点"},
-    {"keywords": ["Landing", "落地"], "region_keywords": ["SG", "新加坡"], "dialer_proxy": "🇸🇬 新加坡节点"},
-    {"keywords": ["Landing", "落地"], "region_keywords": ["TW", "台湾"], "dialer_proxy": "🇼🇸 台湾节点"},
-    {"keywords": ["Landing", "落地"], "region_keywords": ["KR", "韩国"], "dialer_proxy": "🇰🇷 韩国节点"},
+
+# REGION_MAPPING: 恢复使用精确的、手动定义的正则表达式 identifier_patterns
+# "region_node_keywords": 用于从节点名称中识别该节点属于哪个区域。
+# "identifier_patterns": 用于在 proxy-groups 中搜索与该区域匹配的代理组的正则表达式。
+REGION_MAPPING = [
+    {"region_node_keywords": ["HK", "HongKong", "Hong Kong", "香港"],
+     "identifier_patterns": [r"\bhk\b", r"hong\s*kong", r"香港"]}, # \b 表示单词边界
+    {"region_node_keywords": ["US", "UnitedStates", "United States", "美国"],
+     "identifier_patterns": [r"\bus\b", r"united\s*states", r"america", r"美国"]},
+    {"region_node_keywords": ["JP", "Japan", "日本"],
+     "identifier_patterns": [r"\bjp\b", r"japan", r"日本"]},
+    {"region_node_keywords": ["SG", "Singapore", "新加坡"],
+     "identifier_patterns": [r"\bsg\b", r"singapore", r"新加坡"]},
+    {"region_node_keywords": ["TW", "Taiwan", "台湾"], # 与用户v8提供的一致
+     "identifier_patterns": [r"\btw\b", r"taiwan", r"台湾"]},
+    {"region_node_keywords": ["KR", "Korea", "韩国"], # 与用户v8提供的一致
+     "identifier_patterns": [r"\bkr\b", r"korea", r"韩国"]},
+    # 你可以在这里添加更多区域映射，例如：
+    # {"region_node_keywords": ["GB", "UK", "英国"],
+    #  "identifier_patterns": [r"\bgbr\b", r"\buk\b", r"united\s*kingdom", r"英国"]},
 ]
+LANDING_NODE_KEYWORDS = ["Landing", "落地"] # 保持用户提供的列表
 
 # 初始化 ruamel.yaml
 yaml = YAML()
 yaml.preserve_quotes = True
-yaml.indent(mapping=2, sequence=4, offset=2)   # 修复 proxy-groups 缩进
-yaml.width = 1000   # 强制内联单行
-yaml.explicit_start = True   # 添加 --- 起始标记
+yaml.indent(mapping=2, sequence=4, offset=2)
+yaml.width = float('inf') 
+yaml.explicit_start = True
+# --- 全局配置结束 ---
 
-# 打印环境变量
-logger.info(f"Environment variables: PORT={PORT}, REMOTE_URL={REMOTE_URL}, "
-             f"MANUAL_DIALER_ENABLED={MANUAL_DIALER_ENABLED}, "
-             f"LANDING_NODE_1={LANDING_NODE_1}, DIALER_NODE_1={DIALER_NODE_1}, "
-             f"LANDING_NODE_2={LANDING_NODE_2}, DIALER_NODE_2={DIALER_NODE_2}")
+def find_matching_dialer_group(node_name, all_proxy_groups, current_logger):
+    node_name_lower = node_name.lower()
+    best_match_group = None
+    highest_score = -1 
+    identified_region_patterns_for_search = None
+
+    for region_info in REGION_MAPPING:
+        if any(kw.lower() in node_name_lower for kw in region_info["region_node_keywords"]):
+            identified_region_patterns_for_search = region_info["identifier_patterns"]
+            current_logger.info(f"Node '{node_name}' identified with region. Will search groups using patterns: {identified_region_patterns_for_search}")
+            break 
+
+    if not identified_region_patterns_for_search:
+        current_logger.warning(f"No region identified in landing node name: '{node_name}' based on region_node_keywords.")
+        return None
+
+    current_logger.info(f"Attempting to find dialer group for node '{node_name}' using region patterns: {identified_region_patterns_for_search}")
+    for group in all_proxy_groups:
+        group_name = group.get("name", "")
+        group_name_lower = group_name.lower()
+        
+        if not (group_name and group.get("type")): 
+            continue
+
+        current_score_for_this_group = 0
+        match_details = []
+        for pattern in identified_region_patterns_for_search:
+            try:
+                if re.search(pattern, group_name_lower, re.IGNORECASE):
+                    score_for_this_pattern = len(pattern) 
+                    if pattern.startswith(r"\b") and pattern.endswith(r"\b"):
+                        score_for_this_pattern += 10 
+                    current_score_for_this_group += score_for_this_pattern
+                    match_details.append(pattern)
+            except re.error as e:
+                current_logger.error(f"Regex error with pattern '{pattern}' while searching in group '{group_name}': {e}")
+                continue
+        
+        if current_score_for_this_group > 0:
+            current_logger.debug(f"Group '{group_name}' (score: {current_score_for_this_group}) matched patterns: {match_details} for node '{node_name}'.")
+            if current_score_for_this_group > highest_score:
+                highest_score = current_score_for_this_group
+                best_match_group = group
+                current_logger.info(f"New best match for node '{node_name}': group '{group_name}' with score {highest_score}.")
+            elif current_score_for_this_group == highest_score and best_match_group:
+                if len(group_name) < len(best_match_group.get("name", "")): 
+                    current_logger.debug(f"Group '{group_name}' has same score but shorter name than '{best_match_group.get('name')}'. Updating best match.")
+                    best_match_group = group
+                else:
+                    current_logger.debug(f"Group '{group_name}' has same score as current best '{best_match_group.get('name')}'. Keeping current best.")
+
+    if best_match_group:
+        current_logger.info(f"Final best matching dialer group for node '{node_name}' is '{best_match_group['name']}' with score {highest_score}.")
+    else:
+        current_logger.warning(f"No dialer group found for node '{node_name}' that matches its identified region patterns.")
+        
+    return best_match_group
+
+
+def process_subscription(remote_url, manual_dialer_enabled, manual_pairs_list, current_logger):
+    current_logger.info(f"Processing subscription for REMOTE_URL: {remote_url}")
+    current_logger.info(f"Manual dialer enabled (0=auto, 1=manual): {manual_dialer_enabled}")
+    if int(manual_dialer_enabled) == 1: 
+        current_logger.info(f"Manual pairs (LandingFromUI:FrontFromUI): {manual_pairs_list}")
+
+    try:
+        response = requests.get(remote_url, timeout=15)
+        response.raise_for_status()
+        current_logger.info(f"Response status code from remote: {response.status_code}")
+    except requests.Timeout:
+        current_logger.error(f"Request to remote_url '{remote_url}' timed out.")
+        raise
+    except requests.RequestException as e:
+        current_logger.error(f"Request error for remote_url '{remote_url}': {e}")
+        raise
+
+    try:
+        config_content = response.content
+        if config_content.startswith(b'\xef\xbb\xbf'):
+            current_logger.info("UTF-8 BOM detected and removed from remote content.")
+            config_content = config_content[3:]
+        config = yaml.load(config_content)
+
+        if not isinstance(config, dict) or "proxies" not in config or "proxy-groups" not in config:
+            current_logger.error("Invalid YAML from remote or missing 'proxies'/'proxy-groups' section")
+            raise ValueError("Invalid YAML from remote or missing 'proxies'/'proxy-groups' section")
+    except Exception as e:
+        current_logger.error(f"Error parsing YAML from remote_url '{remote_url}': {e}", exc_info=True)
+        raise ValueError(f"Error parsing YAML from remote: {e}")
+
+    proxies = config.get("proxies", [])
+    proxy_groups = config.get("proxy-groups", [])
+
+    if int(manual_dialer_enabled) == 1: 
+        current_logger.info("Using manual dialer mode.")
+        if not manual_pairs_list:
+            current_logger.warning("Manual dialer mode selected, but no valid manual_pairs provided.")
+
+        for landing_name_ui, front_name_ui in manual_pairs_list:
+            found_landing_node_for_manual_config = False
+            for proxy_node in proxies: 
+                if proxy_node.get("name") == landing_name_ui:
+                    proxy_node["dialer-proxy"] = front_name_ui
+                    current_logger.info(f"Applied manual dialer-proxy '{front_name_ui}' TO landing node '{landing_name_ui}'")
+                    found_landing_node_for_manual_config = True
+                    
+                    # Check if front_name_ui is a proxy group
+                    target_dialer_group_obj = None
+                    for grp in proxy_groups:
+                        if grp.get("name") == front_name_ui:
+                            target_dialer_group_obj = grp
+                            break
+                    
+                    if target_dialer_group_obj: # front_name_ui is indeed a proxy group
+                        group_proxies_list = target_dialer_group_obj.get("proxies")
+                        if isinstance(group_proxies_list, list):
+                            # If the landing node itself is in the proxies list of the group it's dialing through, remove it.
+                            if landing_name_ui in group_proxies_list:
+                                try:
+                                    group_proxies_list.remove(landing_name_ui)
+                                    current_logger.info(f"Removed landing node '{landing_name_ui}' from proxy list of its dialer group '{front_name_ui}' to prevent recursion.")
+                                except ValueError:
+                                    current_logger.warning(f"Landing node '{landing_name_ui}' reported in dialer group '{front_name_ui}' but remove failed.")
+                        else:
+                            current_logger.warning(f"Dialer group '{front_name_ui}' for landing node '{landing_name_ui}' does not have a valid 'proxies' list.")
+                    else:
+                        current_logger.info(f"Dialer target '{front_name_ui}' for landing node '{landing_name_ui}' is not a proxy group (or not found). No group-based removal check needed.")
+                    break # Processed this landing_name_ui, move to next pair
+            if not found_landing_node_for_manual_config:
+                current_logger.warning(f"Manual mode: Landing node '{landing_name_ui}' (from UI left column) not found in proxies list.")
+    
+    else: # Automatic mode (manual_dialer_enabled == 0)
+        current_logger.info("Using automatic dialer mode")
+        for proxy_idx, proxy_node in enumerate(proxies):
+            proxy_name = proxy_node.get("name", "")
+            proxy_name_lower = proxy_name.lower()
+
+            is_landing_node_type = any(kw.lower() in proxy_name_lower for kw in LANDING_NODE_KEYWORDS)
+            if not is_landing_node_type:
+                continue
+            
+            current_logger.info(f"Processing potential landing node (idx: {proxy_idx}): '{proxy_name}' for auto dialing.")
+            dialer_proxy_group_obj = find_matching_dialer_group(proxy_name, proxy_groups, current_logger)
+
+            if dialer_proxy_group_obj and dialer_proxy_group_obj.get("name"):
+                dialer_proxy_group_name = dialer_proxy_group_obj["name"]
+                proxy_node["dialer-proxy"] = dialer_proxy_group_name
+                current_logger.info(f"Applied auto dialer-proxy '{dialer_proxy_group_name}' for landing node '{proxy_name}'")
+
+                group_proxies_list = dialer_proxy_group_obj.get("proxies")
+                if isinstance(group_proxies_list, list):
+                    if proxy_name in group_proxies_list:
+                        try:
+                            group_proxies_list.remove(proxy_name)
+                            current_logger.info(f"Removed landing node '{proxy_name}' from its dialer group '{dialer_proxy_group_name}' proxies list.")
+                        except ValueError:
+                            current_logger.warning(f"Node '{proxy_name}' was reported in group '{dialer_proxy_group_name}' but remove failed.")
+            else:
+                current_logger.warning(f"No suitable dialer group found for landing node '{proxy_name}'. It will not be configured for auto chain dialing.")
+
+    output = StringIO()
+    yaml.dump(config, output)
+    return output.getvalue()
+
 
 class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
-        if self.path == "/subscription.yaml":
+        parsed_url = urlparse(self.path)
+        
+        if parsed_url.path == "/subscription.yaml":
+            query_params = parse_qs(parsed_url.query)
+            logger.info(f"Request for /subscription.yaml with params: {query_params}")
+
+            remote_url_list = query_params.get('remote_url', [])
+            if not remote_url_list or not remote_url_list[0]:
+                self.send_error_response("Missing 'remote_url' query parameter.", 400)
+                return
+            remote_url = remote_url_list[0] 
+
             try:
-                logger.info(f"Requesting data from {REMOTE_URL}")
-                response = requests.get(REMOTE_URL, timeout=10)
-                response.raise_for_status()  # 抛出 HTTP 错误
-                logger.info(f"Response status code: {response.status_code}")
-                content_type = response.headers.get("Content-Type", "")
-                logger.info(f"Response Content-Type: {content_type}")
+                manual_dialer_enabled_str = query_params.get('manual_dialer_enabled', ['1'])[0] 
+                if manual_dialer_enabled_str not in ['0', '1']:
+                    logger.warning(f"Invalid manual_dialer_enabled value '{manual_dialer_enabled_str}', defaulting to '1' (manual).")
+                    manual_dialer_enabled_str = '1'
+                manual_dialer_enabled = int(manual_dialer_enabled_str)
 
-                # 解析 YAML
-                config = yaml.load(response.content)
-                if not config or "proxies" not in config or "proxy-groups" not in config:
-                    logger.error("Invalid YAML or missing 'proxies'/'proxy-groups' section")
-                    raise ValueError("Invalid YAML or missing 'proxies'/'proxy-groups' section")
+                manual_pairs_encoded_str = query_params.get('manual_pairs', [''])[0]
+                manual_pairs_str = ""
+                if manual_pairs_encoded_str:
+                    manual_pairs_str = unquote(manual_pairs_encoded_str) 
 
-                landing_nodes = []
+                manual_pairs_list = [] 
+                if manual_dialer_enabled == 1 and manual_pairs_str: 
+                    pairs = manual_pairs_str.split(',')
+                    for pair_str in pairs:
+                        if not pair_str.strip(): continue
+                        parts = pair_str.split(':', 1)
+                        if len(parts) == 2 and parts[0].strip() and parts[1].strip():
+                            manual_pairs_list.append((parts[0].strip(), parts[1].strip()))
+                        else:
+                            logger.warning(f"Malformed manual pair string part: '{pair_str}', skipping.")
+                
+                modified_yaml = process_subscription(
+                    remote_url,
+                    manual_dialer_enabled, 
+                    manual_pairs_list, 
+                    logger 
+                )
 
-                # 手动拨号模式
-                if MANUAL_DIALER_ENABLED:
-                    logger.info("Using manual dialer mode")
-                    manual_configs = [
-                        (LANDING_NODE_1, DIALER_NODE_1),
-                        (LANDING_NODE_2, DIALER_NODE_2)
-                    ]
-                    for landing_node, dialer_proxy in manual_configs:
-                        if landing_node and dialer_proxy:
-                            for proxy in config["proxies"]:
-                                if proxy["name"] == landing_node:
-                                    proxy["dialer-proxy"] = dialer_proxy
-                                    landing_nodes.append((landing_node, dialer_proxy))
-                                    logger.info(f"Applied manual dialer-proxy '{dialer_proxy}' for node '{landing_node}'")
-                                    break
-                            else:
-                                logger.warning(f"No match for manual node '{landing_node}'")
-                else:
-                    # 自动拨号模式
-                    logger.info("Using automatic dialer mode")
-                    for proxy in config["proxies"]:
-                        name = proxy["name"]
-                        matched = False
-                        for mod in MODIFICATIONS:
-                            if (any(kw.lower() in name.lower() for kw in mod["keywords"]) and
-                                any(rk.lower() in name.lower() for rk in mod["region_keywords"])):
-                                proxy["dialer-proxy"] = mod["dialer_proxy"]
-                                landing_nodes.append((name, mod["dialer_proxy"]))
-                                logger.info(f"Added dialer-proxy '{mod['dialer_proxy']}' for node '{name}'")
-                                matched = True
-                                break
-                        if not matched and any(kw.lower() in name.lower() for kw in ["Landing", "落地"]):
-                            logger.warning(f"No region match for landing node '{name}'")
-
-                # 处理 proxy-groups
-                for node_name, group_name in landing_nodes:
-                    for group in config["proxy-groups"]:
-                        if group["name"] == group_name and "proxies" in group:
-                            if node_name in group["proxies"]:
-                                group["proxies"].remove(node_name)
-                                logger.info(f"Removed node '{node_name}' from group '{group_name}'")
-                            else:
-                                logger.warning(f"Node '{node_name}' not found in group '{group_name}'")
-                        elif group["name"] == group_name:
-                            logger.warning(f"No 'proxies' key in group '{group_name}'")
-
-                # 序列化 YAML
-                output = StringIO()
-                yaml.dump(config, output)
-                modified_yaml = output.getvalue()
-
-                # 成功响应时，不保存 YAML 到文件，直接发送给客户端
                 self.send_response(200)
-                self.send_header("Content-Type", "text/yaml; charset=utf-8")
-                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate") # 添加 Cache-Control
+                self.send_header("Content-Type", "text/yaml; charset=utf-8") 
+                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
                 self.end_headers()
                 self.wfile.write(modified_yaml.encode("utf-8"))
 
             except requests.Timeout:
-                logger.error("Request to REMOTE_URL timed out")
-                self.send_error_response("Request to REMOTE_URL timed out")
+                logger.error("Request to remote_url timed out")
+                self.send_error_response("Request to remote_url timed out", 503)
             except requests.RequestException as e:
-                logger.error(f"Request error: {str(e)}")
-                self.send_error_response(f"Request error: {str(e)}")
+                logger.error(f"Request error for remote_url: {str(e)}")
+                self.send_error_response(f"Error fetching remote_url: {str(e)}", 502)
             except ValueError as e:
-                logger.error(f"Parse error: {str(e)}")
-                self.send_error_response(f"Parse error: {str(e)}")
+                logger.error(f"Processing error: {str(e)}", exc_info=True)
+                self.send_error_response(f"Processing error: {str(e)}", 400 if "Invalid YAML" in str(e) or "Missing 'remote_url'" in str(e) else 500)
             except Exception as e:
                 logger.error(f"Unexpected error: {str(e)}", exc_info=True)
-                self.send_error_response(f"Unexpected error: {str(e)}")
+                self.send_error_response(f"Unexpected server error: {str(e)}", 500)
+        
+        elif parsed_url.path == "/":
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            frontend_file_path = os.path.join(script_dir, "frontend.html")
+            try:
+                with open(frontend_file_path, "r", encoding="utf-8") as f:
+                    html_content_to_serve = f.read()
+                logger.info(f"Serving frontend.html from: {frontend_file_path}")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(html_content_to_serve.encode("utf-8"))
+            except FileNotFoundError:
+                logger.error(f"frontend.html not found at {frontend_file_path}.")
+                self.send_error_response(f"Frontend interface file (frontend.html) not found at expected location: {frontend_file_path}", 404)
+            except Exception as e:
+                logger.error(f"Error reading or serving frontend.html: {e}", exc_info=True)
+                self.send_error_response(f"Error serving frontend: {e}", 500)
         else:
-            super().do_GET()
+            self.send_error_response(f"Resource not found: {self.path}", 404)
 
-    def send_error_response(self, message):
-        self.send_response(500)
+
+    def send_error_response(self, message, code=500):
+        self.send_response(code)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
         self.end_headers()
         self.wfile.write(message.encode("utf-8"))
 
+    def log_message(self, format, *args):
+        logger.debug(f"HTTP Request from {self.address_string()}: {args[0]}")
+        return
 
-# 启动服务器
-with ThreadingHTTPServer(("", PORT), CustomHandler) as httpd:
-    logger.info(f"Serving at http://0.0.0.0:{PORT}")
-    logger.info(f"Access modified subscription at http://<请在此处输入你的服务器IP>:{PORT}/subscription.yaml")
-    httpd.serve_forever()
+if __name__ == "__main__":
+    if not os.path.exists(LOG_DIR):
+        try:
+            os.makedirs(LOG_DIR)
+            logger.info(f"Created log directory: {LOG_DIR}")
+        except OSError as e:
+            logger.error(f"Could not create log directory {LOG_DIR}: {e}", exc_info=True)
+
+    logger.info(f"Starting server on port {PORT}...")
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    logger.info(f"Script directory: {script_dir}")
+    logger.info(f"Expected frontend.html path: {os.path.join(script_dir, 'frontend.html')}")
+
+    with ThreadingHTTPServer(("", PORT), CustomHandler) as httpd:
+        logger.info(f"Serving at http://0.0.0.0:{PORT}")
+        logger.info("--- Chain SubConverter Service Started ---")
+        logger.info(f"Access the frontend configurator at http://<your_server_ip_or_localhost>:{PORT}/")
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            logger.info("Server is shutting down...")
+        finally:
+            httpd.server_close()
+            logger.info("Server shut down successfully.")
