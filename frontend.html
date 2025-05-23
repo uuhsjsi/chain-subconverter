@@ -3,656 +3,343 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>链式代理订阅转换器</title>
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self';
+                   script-src 'self';
+                   style-src 'self' 'unsafe-inline';
+                   img-src 'self' data:;">
+    <title>Mihomo 链式代理 · 订阅转换器</title>
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
-            margin: 0; padding: 0; background-color: #f4f7f6; color: #333; line-height: 1.6;
-            display: flex; justify-content: center; align-items: flex-start;
-            min-height: 100vh; padding-top: 20px; padding-bottom: 20px; box-sizing: border-box;
-        }
-        .container {
-            width: 90%; max-width: 750px; padding: 25px; background-color: #fff;
-            border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
-        h1 { text-align: center; color: #2c3e50; margin-bottom: 25px; font-size: 1.8em; }
-        label.form-label {
-            display: block; margin-top: 15px; margin-bottom: 8px; font-weight: bold; color: #34495e;
-        }
-        input[type="text"], input[type="url"] {
-            width: calc(100% - 22px); padding: 10px; border: 1px solid #ccc;
-            border-radius: 4px; box-sizing: border-box; font-size: 1em;
+            background-color: #f0f2f5; /* c.body background */
+            font-family: "Segoe UI", sans-serif; /* c.body font */
+            margin: auto; /* c.body margin for centering */
+            padding: 20px; /* c.body padding */
+            max-width: 960px; /* c.body max-width */
+            color: #333; /* c.body color */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
         }
 
-        /* Toggle Switch Styles - Modified for left alignment */
-        .switch-section {
-             margin-top: 20px;
+        h1 {
+            text-align: center;
+            color: #333; /* c.header color */
+            margin-bottom: 24px; /* c.header margin */
+            font-size: 28px; /* c.header font-size */
+            font-weight: bold;
+            width: 100%;
         }
-        .switch-control-line {
+
+        .config-area, .response-area { /* These act as .section from chatgpt.html */
+            width: 100%;
+            box-sizing: border-box;
+            background-color: #ffffff; /* c.section background */
+            border-radius: 12px; /* c.section border-radius */
+            padding: 20px; /* c.section padding */
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05); /* c.section box-shadow */
+            margin-bottom: 20px; /* c.section margin-bottom */
+        }
+
+        .response-area { /* Specific styling for response area */
+            background-color: #f4f6fa; /* c.response-section background */
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04); /* c.response-section box-shadow */
+            border: 1px solid #e0e0e0; /* 添加一个1像素宽、实线、浅灰色的边框 */
+        }
+
+        .sub-section { /* Adopted from chatgpt.html's .sub-section style */
+            padding: 16px;
+            border-left: 4px solid #d0d7de;
+            margin-top: 16px;
+            background-color: #fafbfc;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+        .sub-section:first-child {
+            margin-top: 0;
+        }
+
+        label.form-label { /* For titles within sub-sections */
+            display: block;
+            font-weight: bold;
+            margin-bottom: 10px; /* Increased margin for clarity */
+            color: #333;
+            font-size: 1.05em; /* Slightly larger for sub-section titles */
+        }
+
+        input[type="url"],
+        input[type="text"] { /* Styling from chatgpt.html */
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            box-sizing: border-box;
+            margin-top: 5px;
+            margin-bottom: 8px; /* c.input margin-bottom */
+            font-size: 1em;
+        }
+        input[type="url"]:disabled,
+        input[type="text"]:disabled {
+            background-color: #e9ecef;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        /* Slider Toggle Switch Styles from chatgpt.html */
+        .toggle-group { /* Corresponds to c.toggle-line */
             display: flex;
             align-items: center;
-            margin-bottom: 5px;
+            margin: 5px 0;
         }
-        .switch { /* Switch element itself */
+
+        .switch { /* c.switch */
             position: relative;
             display: inline-block;
-            width: 50px;
-            height: 28px;
-            margin-right: 10px; /* Space between switch and label */
+            width: 40px; /* 原为 46px, 略微减小宽度 */
+            height: 20px; /* 原为 24px, 减小高度 */
+            flex-shrink: 0;
+            margin-right: 10px;
         }
-        .switch-main-label { /* Label text next to the switch */
-            font-weight: bold; color: #34495e;
+        .slider { /* c.slider */
+            position: absolute;
             cursor: pointer;
-            flex-grow: 1; /* Allow label to take remaining space */
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 20px; /* 对应新的高度，保持药丸形状 */
         }
-        .switch input {
-            opacity: 0; width: 0; height: 0;
+        .slider:before { /* c.slider:before */
+            position: absolute;
+            content: "";
+            height: 16px; /* 原为 18px (计算方式: 新高度20px - 2*内边距2px) */
+            width: 16px;  /* 原为 18px */
+            left: 2px;    /* 原为 3px, 减小内边距 */
+            bottom: 2px;  /* 原为 3px */
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
         }
-        .slider {
-            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
-            background-color: #ccc; transition: .4s; border-radius: 28px;
+        input:checked + .slider { /* c.input:checked + .slider */
+            background-color: #3b82f6;
         }
-        .slider:before {
-            position: absolute; content: ""; height: 20px; width: 20px;
-            left: 4px; bottom: 4px; background-color: white;
-            transition: .4s; border-radius: 50%;
+        input:focus + .slider { /* Retained focus style */
+            box-shadow: 0 0 1px #3b82f6;
         }
-        input:checked + .slider { background-color: #3498db; }
-        input:focus + .slider { box-shadow: 0 0 1px #3498db; }
-        input:checked + .slider:before { transform: translateX(22px); }
+        input:checked + .slider:before { /* c.input:checked + .slider:before */
+            transform: translateX(20px); /* 原为 22px (计算方式: 新宽度40px - 滑块宽度16px - 2*内边距2px) */
+        }
 
-        .conditional-text {
-            font-size: 0.85em; color: #7f8c8d;
-            margin-top: 2px; margin-bottom: 10px;
+        .switch-label-text { /* Corresponds to c.toggle-label */
+            margin-left: 0; /* margin-right on .switch handles spacing */
+            font-weight: bold;
+            color: #333;
+            cursor: pointer;
+            font-size: 1em;
         }
 
+        .input-description, .conditional-text { /* Style for descriptive texts */
+            font-size: 0.85em;
+            color: #777; /* c.conditional-text color */
+            margin-top: 5px;
+            margin-bottom: 10px;
+        }
+        /* Specific conditional text alignment if needed */
 
-        /* Manual Pairs Styling */
-        #manualPairsSection { margin-top: 10px; }
+        #manualPairsSection {
+            margin-top: 5px;
+            padding-top: 5px;
+        }
         .manual-pair-dynamic-row {
-            display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
         }
         .manual-pair-dynamic-row .row-number-cell {
-            flex: 0 0 25px; text-align: right; color: #777; font-size: 0.9em; padding-right: 5px;
+            flex: 0 0 20px;
+            text-align: right;
+            color: #777;
+            font-size: 0.9em;
         }
         .manual-pair-dynamic-row .input-cell { flex: 1; }
         .manual-pair-dynamic-row .dialer-proxy-label-cell {
-            flex: 0 0 auto; padding: 0 5px; font-style: normal; font-weight: normal; /* 2. 淡化: 非加粗 */
-            color: #777;
+            flex: 0 0 auto; padding: 0 5px; color: #555; font-size: 0.9em;
+        }
+        .manual-pair-dynamic-row .actions-cell {
+            flex: 0 0 auto; display: flex; gap: 5px;
+        }
+
+        .action-button-inline { /* For + / - buttons, matching c.action-button-inline */
+            padding: 4px 8px;
+            font-size: 0.9em;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            background-color: #f0f0f0;
+            cursor: pointer;
+            line-height: 1;
+        }
+        .action-button-inline:hover:not(:disabled) { background-color: #e0e0e0; }
+        .action-button-inline.add { color: #27ae60; border-color: #a0d4b4;} /* c.add style */
+        .action-button-inline.add:hover:not(:disabled) { background-color: #e6ffed; }
+        .action-button-inline.remove { color: #c0392b; border-color: #e6a8a1;} /* c.remove style */
+        .action-button-inline.remove:hover:not(:disabled) { background-color: #fdd; }
+        .action-button-inline:disabled { /* c.add:disabled style */
+            background-color: #e9ecef;
+            color: #adb5bd;
+            border-color: #ced4da;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        .button-primary { /* Corresponds to c.generate-button */
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px; /* c.generate-button padding */
+            border-radius: 8px; /* c.generate-button border-radius */
+            width: 100%;
+            font-size: 1em; /* c.generate-button font-size */
+            margin-top: 20px; /* c.generate-button margin-top */
+            cursor: pointer;
+            font-weight: 600; /* Added for consistency with other buttons */
+            transition: background-color 0.2s ease;
+        }
+        .button-primary:hover:not(:disabled) { background-color: #2563eb; }
+        .button-primary:disabled { /* c.generate-button:disabled */
+            background-color: #cbd5e1;
+            cursor: not-allowed;
+        }
+
+        .result-buttons { /* c.result-buttons */
+            display: flex;
+            gap: 10px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+        .button-secondary { /* Corresponds to c.action-button or c.button-secondary */
+            background-color: #6366f1; /* c.action-button background */
+            color: white;
+            padding: 10px 16px; /* c.action-button padding */
+            border: none;
+            border-radius: 8px; /* c.action-button border-radius */
+            cursor: pointer;
+            font-weight: 600; /* c.action-button font-weight */
+            flex: 1 1 auto; /* Adapting for flexible width */
+            text-align: center;
+            transition: background-color 0.2s ease;
+        }
+        .button-secondary:hover:not(:disabled) { background-color: #4f46e5; }
+        .button-secondary:disabled { /* c.action-button:disabled */
+            background-color: #d1d5db;
+            color: #787f84; /* Adjusted for better visibility on lighter grey */
+            cursor: not-allowed;
+        }
+
+        #feedbackMessage { /* c.feedback-message */
+            margin-top: 12px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 0.9em;
             text-align: center;
         }
-        .manual-pair-dynamic-row .actions-cell { flex: 0 0 auto; display: flex; gap: 5px; }
-
-        .manual-pair-header { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; padding-left: 0px; /* 1. 移除#号后，调整padding使表头与内容行对齐 */ }
-        .manual-pair-header .row-number-header { flex: 0 0 25px; text-align: right; padding-right: 5px; } /* 保留此单元格用于对齐，但内容为空 */
-        .manual-pair-header .header-label { flex: 1; font-weight: bold; font-size: 0.9em; color: #555; text-align: center; /* 3. 表头文字居中 */ }
-        .manual-pair-header .actions-header-placeholder { flex: 0 0 auto; min-width: 66px; text-align: center; font-weight: bold; font-size: 0.9em; color: #555; /* 3. 表头文字居中 */ }
-
-
-        .action-button {
-            background-color: transparent; border: 1px solid #ccc; color: #555;
-            border-radius: 50%; width: 28px; height: 28px;
-            font-size: 1.2em; line-height: 24px; text-align: center;
-            cursor: pointer; transition: all 0.2s ease; padding: 0;
+        .feedback-success {
+            background-color: #e6ffed;
+            color: #2e7d32;
         }
-        .action-button:hover { background-color: #e9e9e9; border-color: #aaa;}
-        .action-button.add { color: #27ae60; border-color: #27ae60;}
-        .action-button.add:hover { background-color: #e6ffed; }
-        .action-button.remove { color: #c0392b; border-color: #c0392b;}
-        .action-button.remove:hover { background-color: #fdd; }
-
-        button.primary-action {
-            background-color: #3498db; color: white; padding: 12px 0; border: none;
-            border-radius: 6px; cursor: pointer; font-size: 1.1em; margin-top: 30px;
-            width: 100%; transition: background-color 0.3s ease, box-shadow 0.3s ease;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        .feedback-error {
+            background-color: #fdecea;
+            color: #b00020;
         }
-        button.primary-action:hover {
-            background-color: #2980b9;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-        }
-        button.primary-action:disabled {
-             background-color: #bdc3c7; cursor: not-allowed;
-             box-shadow: none;
+        .feedback-info {
+            background-color: #e0f2fe;
+            color: #0288d1;
         }
 
-        .result-button-group {
-            margin-top: 15px;
-            display: grid; /* Use grid for easier equal width distribution */
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); /* Responsive columns */
-            gap: 10px;
-        }
-
-        .result-button-group button { /* General style for all buttons in this group */
-            padding: 10px 15px; /* Adjusted padding */
-            font-size: 1em;
-            border-radius: 6px; /* Softer corners */
-            cursor: pointer;
-            transition: background-color 0.2s ease, transform 0.1s ease;
-            border: 1px solid transparent; /* Base transparent border */
-        }
-
-        button.secondary { /* Style for Copy, Open, Download */
-            background-color: #e9ecef; /* Lighter grey, more modern */
-            color: #495057; /* Darker text for better contrast */
-            border: 1px solid #ced4da; /* Subtle border */
-        }
-        button.secondary:hover {
-            background-color: #dde2e6; /* Slightly darker on hover */
-            border-color: #adb5bd;
-            transform: translateY(-1px); /* Subtle lift effect */
-        }
-
-        #generatedUrlContainer { margin-top: 25px; padding: 15px; background-color: #ecf0f1; border-radius: 4px; }
-        #generatedUrl { background-color: #fff; border: 1px solid #bdc3c7; font-size: 0.95em; word-break: break-all; }
-        small.input-description {
-             display: block; margin-top: 3px; color: #7f8c8d; font-size: 0.85em;
+        #generatedUrl {
+            background-color: #fff;
+            border: 1px solid #ccc;
+            font-size: 0.95em;
+            word-break: break-all;
+            margin-bottom: 5px;
         }
         .hidden { display: none !important; }
-        .error-message, .feedback-message {
-            font-size: 0.9em; margin-top: 5px; padding: 8px; border-radius: 4px;
+        .error-message {
+            color: #b00020;
+            font-size: 0.85em;
+            margin-top: 5px;
         }
-        .error-message { color: #c0392b; background-color: #fdd; border: 1px solid #c0392b; }
-        .feedback-message.success { color: #27ae60; background-color: #e6ffed; border: 1px solid #27ae60; }
-        .feedback-message.info { color: #2980b9; background-color: #e0f7fa; border: 1px solid #2980b9; }
-        .feedback-message.error {
-            color: #c0392b;
-            background-color: #fdd;
-            border: 1px solid #c0392b;
+
+        .footer-link {
+            text-align: center;
+            margin-top: 30px;
+            font-size: 0.9em;
+            color: #7f8c8d;
+            width: 100%;
         }
-        .footer-link { text-align: center; margin-top: 30px; font-size: 0.9em; color: #7f8c8d; }
         .footer-link a { color: #3498db; text-decoration: none; }
         .footer-link a:hover { text-decoration: underline; }
+
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Mihomo链式代理订阅转换器</h1>
+    <h1>Mihomo 链式代理 · 订阅转换器</h1>
 
-        <label for="remoteUrl" class="form-label">原订阅链接:</label>
-        <input type="url" id="remoteUrl" placeholder="请在此输入包含前置和落地节点的配置链接" required>
-        <small class="input-description">建议通过订阅转换服务多条合并生成。如使用OpenClash，可点击配置订阅➡更新，在运行日志➡插件日志中找到。</small>
-        <div id="remoteUrlError" class="error-message hidden">请输入有效的原始订阅链接。</div>
-
-        <div class="switch-section">
-            <div class="switch-control-line">
-                <label class="switch">
-                    <input type="checkbox" id="configModeSwitchInput" onchange="toggleConfigMode()">
-                    <span class="slider"></span>
-                </label>
-                <label class="switch-main-label" for="configModeSwitchInput">自动拨号模式</label>
-            </div>
-            <div id="autoModeText" class="conditional-text hidden">需符合指定的节点命名规范。</div>
-            <div id="manualModeText" class="conditional-text">默认手动配置模式，请指定节点间的拨号关系。</div>
+    <div class="config-area">
+        <div class="sub-section" id="subscriptionLinkGroup">
+            <label for="remoteUrl" class="form-label">订阅链接</label>
+            <input type="url" id="remoteUrl" placeholder="请输入包含前置和落地节点的订阅配置链接" required>
+            <small class="input-description">建议通过订阅转换服务合并生成。如使用OpenClash，可点击配置订阅➡更新，在运行日志➡插件日志中找到</small>
+            <div id="remoteUrlError" class="error-message hidden">请输入有效的原始订阅链接。</div>
         </div>
 
-
-        <div id="manualPairsSection" class="hidden">
-            <div id="manualPairsInputsContainer">
+        <div class="sub-section" id="dialerConfigGroup">
+            <label class="form-label">链式配置</label>
+            <div id="manualPairsSection">
+                <div id="manualPairsInputsContainer">
                 </div>
-        </div>
-
-        <div class="switch-section">
-            <div class="switch-control-line">
+            </div>
+            <div class="toggle-group">
                 <label class="switch">
-                    <input type="checkbox" id="customizeServiceUrlSwitchInput" onchange="toggleServiceUrlInput()">
+                    <input type="checkbox" id="configModeSwitchInput">
                     <span class="slider"></span>
                 </label>
-                <label class="switch-main-label" for="customizeServiceUrlSwitchInput">自定义服务根地址</label>
+                <label class="switch-label-text" for="configModeSwitchInput">自动配置</label>
             </div>
-            <div id="serviceUrlSection" class="hidden">
-                <input type="url" id="serviceUrl" placeholder="例如: http://your-server-ip:11200" style="margin-top: 5px;">
-            </div>
-            <div class="conditional-text">本转换服务的访问地址，一般默认自动填充即可。</div>
+            <small id="autoModeText" class="input-description conditional-text hidden">当前为自动配置模式，节点/组命名需符合自动配置命名规范</small>
+            <small id="manualModeText" class="input-description conditional-text">默认为手动配置模式，请输入落地/前置节点名称</small>
         </div>
 
-        <button id="generateLinkButton" onclick="generateAndValidateUrl()" class="primary-action">🔄 生成新配置链接</button>
-
-        <div id="generatedUrlContainer" class="hidden">
-            <input type="text" id="generatedUrl" readonly>
-            <div class="result-button-group">
-                <button onclick="copyUrl()" class="secondary">🔗 复制链接</button>
-                <button onclick="openUrl()" class="secondary">↗️ 打开链接</button>
-                <button onclick="downloadConfig()" class="secondary">📄 下载配置文件</button>
+        <div class="sub-section" id="serviceAddressGroup">
+            <div class="toggle-group">
+                 <label class="switch">
+                    <input type="checkbox" id="customizeServiceUrlSwitchInput">
+                    <span class="slider"></span>
+                </label>
+                <label class="switch-label-text" for="customizeServiceUrlSwitchInput">自定义服务根地址</label>
             </div>
-            <div id="feedbackMessage" class="feedback-message hidden"></div>
+            <input type="url" id="serviceUrl" placeholder="请输入本服务根地址，注意本机/内/外网的可访问性" style="margin-top: 8px;">
+            <small class="input-description">本转换服务的访问地址，一般默认自动填充即可</small>
         </div>
 
-        <div class="footer-link">
-            <p>项目地址: <a href="https://github.com/slackworker/chain-subconverter" target="_blank" rel="noopener noreferrer">https://github.com/slackworker/chain-subconverter</a></p>
-        </div>
+        <button id="generateLinkButton" class="button-primary">🔄 生成</button>
     </div>
 
-    <script>
-        const MAX_MANUAL_PAIRS = 6;
+    <div class="response-area">
+        <input type="text" id="generatedUrl" readonly placeholder="生成后的配置链接">
+        <div class="result-buttons">
+            <button id="copyUrlButton" class="button-secondary">🔗 复制</button>
+            <button id="openUrlButton" class="button-secondary">↗️ 打开</button>
+            <button id="downloadConfigButton" class="button-secondary">📄 下载</button>
+        </div>
+        <div id="feedbackMessage" class="feedback-message feedback-info">等待操作...</div>
+    </div>
 
-        document.addEventListener('DOMContentLoaded', function() {
-            const serviceUrlInput = document.getElementById('serviceUrl');
-            try {
-                const currentOrigin = window.location.origin;
-                if (window.location.protocol.startsWith('http') && currentOrigin &&
-                    !currentOrigin.includes('localhost') && !currentOrigin.includes('127.0.0.1')) {
-                    serviceUrlInput.value = currentOrigin;
-                } else if (!serviceUrlInput.value) {
-                    serviceUrlInput.value = 'http://localhost:11200';
-                }
-            } catch (e) {
-                console.warn("Could not auto-fill service URL:", e);
-                if (!serviceUrlInput.value) {
-                    serviceUrlInput.value = 'http://localhost:11200';
-                }
-            }
+    <div class="footer-link">
+        <p>项目地址: <a href="https://github.com/slackworker/chain-subconverter" target="_blank" rel="noopener noreferrer">https://github.com/slackworker/chain-subconverter</a></p>
+    </div>
 
-            document.getElementById('configModeSwitchInput').checked = false;
-            document.getElementById('customizeServiceUrlSwitchInput').checked = false;
-
-            renderManualPairRows();
-            toggleConfigMode();
-            toggleServiceUrlInput();
-        });
-
-        function createManualPairRowElement(index, landingValue = '', frontValue = '') {
-            const newRow = document.createElement('div');
-            newRow.className = 'manual-pair-dynamic-row';
-
-            // 4. +图标在前面，-图标在后面
-            newRow.innerHTML = `
-                <span class="row-number-cell">${index + 1}.</span>
-                <div class="input-cell">
-                    <input type="text" class="landing-proxy-input" placeholder="落地节点名称" value="${landingValue}">
-                </div>
-                <div class="dialer-proxy-label-cell">dialer-proxy:</div>
-                <div class="input-cell">
-                    <input type="text" class="front-proxy-input" placeholder="前置节点/组名称" value="${frontValue}">
-                </div>
-                <div class="actions-cell">
-                    <button type="button" class="action-button add" title="在此行下方添加新行" onclick="addManualPairRow(this.closest('.manual-pair-dynamic-row'))">+</button>
-                    <button type="button" class="action-button remove" title="删除此行" onclick="removeManualPairRow(this.closest('.manual-pair-dynamic-row'))">–</button>
-                </div>
-            `;
-            return newRow;
-        }
-
-        function renderManualPairRows() {
-            const container = document.getElementById('manualPairsInputsContainer');
-            if (!container) return;
-            container.innerHTML = '';
-
-            let rowsData = getManualPairDataFromStorage();
-            const configModeSwitch = document.getElementById('configModeSwitchInput');
-            if (configModeSwitch && !configModeSwitch.checked && rowsData.length === 0) {
-                rowsData = [{ landing: '', front: '' }];
-            }
-
-            rowsData.forEach((data, index) => {
-                container.appendChild(createManualPairRowElement(index, data.landing, data.front));
-            });
-            updateActionButtonsState();
-        }
-
-        function getManualPairDataFromStorage() {
-            const currentRows = document.querySelectorAll('#manualPairsInputsContainer .manual-pair-dynamic-row');
-            if (currentRows.length > 0) {
-                return getManualPairDataFromDOM();
-            }
-            return [];
-        }
-
-        function getManualPairDataFromDOM() {
-            const rows = document.querySelectorAll('#manualPairsInputsContainer .manual-pair-dynamic-row');
-            const data = [];
-            rows.forEach(row => {
-                const landingInput = row.querySelector('.landing-proxy-input');
-                const frontInput = row.querySelector('.front-proxy-input');
-                data.push({
-                    landing: landingInput ? landingInput.value.trim() : '',
-                    front: frontInput ? frontInput.value.trim() : ''
-                });
-            });
-            return data;
-        }
-
-        function addManualPairRow(callingRowElement) {
-            const container = document.getElementById('manualPairsInputsContainer');
-            if (!container) return;
-            const rows = container.querySelectorAll('.manual-pair-dynamic-row');
-            if (rows.length >= MAX_MANUAL_PAIRS) {
-                showFeedback(`最多只能添加 ${MAX_MANUAL_PAIRS} 对手动节点。`, 'info');
-                return;
-            }
-            const newRow = createManualPairRowElement(rows.length);
-            if (callingRowElement) {
-                const parentRow = callingRowElement.closest('.manual-pair-dynamic-row');
-                if (parentRow) {
-                    parentRow.after(newRow);
-                } else {
-                    container.appendChild(newRow);
-                }
-            } else {
-                container.appendChild(newRow);
-            }
-            renumberRowsInDOM();
-            updateActionButtonsState();
-        }
-
-        function removeManualPairRow(rowElementToRemove) {
-            const container = document.getElementById('manualPairsInputsContainer');
-            if (!container || !rowElementToRemove) return;
-            const rows = container.querySelectorAll('.manual-pair-dynamic-row');
-
-            if (rows.length <= 1) {
-                showFeedback('至少需要保留一对节点配置。', 'info');
-                const landingInput = rowElementToRemove.querySelector('.landing-proxy-input');
-                const frontInput = rowElementToRemove.querySelector('.front-proxy-input');
-                if (landingInput) landingInput.value = '';
-                if (frontInput) frontInput.value = '';
-                return;
-            }
-            rowElementToRemove.remove();
-            renumberRowsInDOM();
-            updateActionButtonsState();
-        }
-
-        function renumberRowsInDOM() {
-            const rows = document.querySelectorAll('#manualPairsInputsContainer .manual-pair-dynamic-row');
-            rows.forEach((row, index) => {
-                const rowNumberSpan = row.querySelector('.row-number-cell');
-                if (rowNumberSpan) {
-                    rowNumberSpan.textContent = `${index + 1}.`;
-                }
-            });
-        }
-
-        function updateActionButtonsState() {
-            const rows = document.querySelectorAll('#manualPairsInputsContainer .manual-pair-dynamic-row');
-            rows.forEach((row, index) => {
-                const addButton = row.querySelector('.action-button.add');
-                const removeButton = row.querySelector('.action-button.remove');
-
-                if (addButton) {
-                    addButton.style.visibility = (rows.length < MAX_MANUAL_PAIRS) ? 'visible' : 'hidden';
-                }
-                if (removeButton) {
-                    removeButton.style.visibility = 'visible';
-                    removeButton.disabled = (rows.length <= 1);
-                }
-            });
-        }
-
-        function toggleConfigMode() {
-            const configModeSwitch = document.getElementById('configModeSwitchInput');
-            const manualPairsSection = document.getElementById('manualPairsSection');
-            const autoModeText = document.getElementById('autoModeText');
-            const manualModeText = document.getElementById('manualModeText');
-
-            if (!configModeSwitch || !manualPairsSection || !autoModeText || !manualModeText) return;
-
-            if (configModeSwitch.checked) { // Auto Mode ON
-                manualPairsSection.classList.add('hidden');
-                autoModeText.classList.remove('hidden');
-                manualModeText.classList.add('hidden');
-            } else { // Manual Mode ON (Auto Mode OFF)
-                manualPairsSection.classList.remove('hidden');
-                autoModeText.classList.add('hidden');
-                manualModeText.classList.remove('hidden');
-                const container = document.getElementById('manualPairsInputsContainer');
-                if (container && container.children.length === 0) {
-                    renderManualPairRows();
-                }
-            }
-            updateActionButtonsState();
-        }
-
-        function toggleServiceUrlInput() {
-            const customizeCheckbox = document.getElementById('customizeServiceUrlSwitchInput');
-            const serviceUrlSection = document.getElementById('serviceUrlSection');
-            if (!customizeCheckbox || !serviceUrlSection) return;
-
-            if (customizeCheckbox.checked) {
-                serviceUrlSection.classList.remove('hidden');
-            } else {
-                serviceUrlSection.classList.add('hidden');
-            }
-        }
-
-        function validateInputs() {
-            const remoteUrlInput = document.getElementById('remoteUrl');
-            const remoteUrlError = document.getElementById('remoteUrlError');
-            if (!remoteUrlInput || !remoteUrlError) return false;
-            if (!remoteUrlInput.value.trim()) {
-                remoteUrlError.classList.remove('hidden');
-                remoteUrlInput.focus();
-                return false;
-            }
-            remoteUrlError.classList.add('hidden');
-            return true;
-        }
-
-        function showFeedback(message, type = 'info', duration = 3000) {
-            const feedbackElement = document.getElementById('feedbackMessage');
-            if (!feedbackElement) return;
-            feedbackElement.textContent = message;
-            feedbackElement.className = 'feedback-message hidden';
-            feedbackElement.classList.add(type);
-            feedbackElement.classList.remove('hidden');
-            if (duration > 0) {
-                setTimeout(() => {
-                    feedbackElement.classList.add('hidden');
-                }, duration);
-            }
-        }
-
-        function hideFeedback() {
-            document.getElementById('feedbackMessage')?.classList.add('hidden');
-        }
-
-        function generateUrlLogic() {
-            if (!validateInputs()) {
-                document.getElementById('generatedUrlContainer')?.classList.add('hidden');
-                showFeedback('错误：请输入有效的原始订阅链接。', 'error');
-                return null;
-            }
-
-            const serviceUrlInput = document.getElementById('serviceUrl');
-            const remoteUrlInput = document.getElementById('remoteUrl');
-            const configModeSwitch = document.getElementById('configModeSwitchInput');
-
-            if (!serviceUrlInput || !remoteUrlInput || !configModeSwitch) {
-                showFeedback('错误：一个或多个必要的表单元素未找到。', 'error');
-                return null;
-            }
-
-            const serviceUrl = serviceUrlInput.value.trim().replace(/\/$/, '');
-            if (!serviceUrl) {
-                 showFeedback('错误：请输入服务根地址。', 'error');
-                 return null;
-            }
-            const remoteUrl = remoteUrlInput.value.trim();
-            const manualDialerEnabledValue = configModeSwitch.checked ? '0' : '1';
-
-            let manualPairsArray = [];
-            if (manualDialerEnabledValue === '1') {
-                const rows = document.querySelectorAll('#manualPairsInputsContainer .manual-pair-dynamic-row');
-                rows.forEach(row => {
-                    const landingInput = row.querySelector('.landing-proxy-input');
-                    const frontInput = row.querySelector('.front-proxy-input');
-                    if (landingInput && frontInput) {
-                        const landingValue = landingInput.value.trim();
-                        const frontValue = frontInput.value.trim();
-                        if (landingValue && frontValue) {
-                            manualPairsArray.push(landingValue + ":" + frontValue);
-                        }
-                    }
-                });
-            }
-            const manualPairsString = manualPairsArray.join(',');
-
-            let targetUrl = serviceUrl + '/subscription.yaml?';
-            targetUrl += 'remote_url=' + encodeURIComponent(remoteUrl);
-            targetUrl += '&manual_dialer_enabled=' + manualDialerEnabledValue;
-
-            if (manualDialerEnabledValue === '1' && manualPairsString) {
-                targetUrl += '&manual_pairs=' + encodeURIComponent(manualPairsString);
-            }
-            return targetUrl;
-        }
-
-        async function generateAndValidateUrl() {
-            hideFeedback();
-            const generateBtn = document.getElementById('generateLinkButton');
-            generateBtn.disabled = true;
-            showFeedback('正在生成和验证链接...', 'info', 0);
-
-            const url = generateUrlLogic();
-            const generatedUrlContainer = document.getElementById('generatedUrlContainer');
-            const generatedUrlInput = document.getElementById('generatedUrl');
-
-            if (!url) {
-                if (generatedUrlContainer) generatedUrlContainer.classList.add('hidden');
-                generateBtn.disabled = false;
-                return;
-            }
-
-            try {
-                const response = await fetch(url);
-                if (!response.ok) {
-                    const errorTextFromServer = await response.text();
-                    let displayError = `链接验证失败 (HTTP ${response.status})`;
-                    if (errorTextFromServer && errorTextFromServer.length < 200) {
-                        displayError += `: ${errorTextFromServer.trim()}`;
-                    }
-                    showFeedback(displayError, 'error', 7000);
-                    if (generatedUrlContainer) generatedUrlContainer.classList.add('hidden');
-                } else {
-                    const contentType = response.headers.get("content-type");
-                    if (contentType && (contentType.toLowerCase().includes("yaml") || contentType.toLowerCase().includes("text"))) {
-                        if (generatedUrlContainer && generatedUrlInput) {
-                            generatedUrlInput.value = url;
-                            generatedUrlContainer.classList.remove('hidden');
-                            showFeedback('链接已生成并验证成功！', 'success');
-                        }
-                    } else {
-                       showFeedback(`链接验证成功，但响应类型 (${contentType || '未知'}) 可能不是预期的YAML。链接仍已生成。`, 'info', 7000);
-                       if (generatedUrlContainer && generatedUrlInput) {
-                            generatedUrlInput.value = url;
-                            generatedUrlContainer.classList.remove('hidden');
-                        }
-                    }
-                }
-            } catch (error) {
-                console.error('验证链接时出错:', error);
-                showFeedback(`验证链接时出错: ${error.message}`, 'error', 7000);
-                if (generatedUrlContainer) generatedUrlContainer.classList.add('hidden');
-            } finally {
-                generateBtn.disabled = false;
-            }
-        }
-
-
-        function copyUrl() {
-            hideFeedback();
-            const generatedUrlInput = document.getElementById('generatedUrl');
-            if (!generatedUrlInput || !generatedUrlInput.value) {
-                showFeedback('没有可复制的链接。', 'info');
-                return;
-            }
-            const textToCopy = generatedUrlInput.value;
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(textToCopy).then(() => {
-                    showFeedback('链接已复制到剪贴板！ (API)', 'success');
-                }).catch(err => {
-                    console.warn('navigator.clipboard.writeText 失败: ', err);
-                    tryCopyExecCommand(textToCopy);
-                });
-            } else {
-                console.warn('navigator.clipboard API 不可用，尝试备用方法。');
-                tryCopyExecCommand(textToCopy);
-            }
-        }
-
-        function tryCopyExecCommand(textToCopy) {
-            const tempTextArea = document.createElement('textarea');
-            tempTextArea.value = textToCopy;
-            tempTextArea.style.position = 'absolute';
-            tempTextArea.style.left = '-9999px';
-            document.body.appendChild(tempTextArea);
-            let successful = false;
-            try {
-                tempTextArea.select();
-                tempTextArea.setSelectionRange(0, 99999);
-                successful = document.execCommand('copy');
-            } catch (err) {
-                console.error('execCommand 复制错误: ', err);
-            } finally {
-                document.body.removeChild(tempTextArea);
-            }
-            if (successful) {
-                showFeedback('链接已复制到剪贴板！ (Fallback)', 'success');
-            } else {
-                showFeedback('复制失败，请手动复制。', 'error', 5000);
-            }
-            window.getSelection()?.removeAllRanges();
-        }
-
-        function openUrl() {
-            hideFeedback();
-            const generatedUrlInput = document.getElementById('generatedUrl');
-            if (!generatedUrlInput || !generatedUrlInput.value) {
-                showFeedback('没有可打开的链接。', 'info');
-                return;
-            }
-            const urlToOpen = generatedUrlInput.value;
-            window.open(urlToOpen, '_blank');
-            showFeedback('正在尝试打开链接...', 'info', 2000);
-        }
-
-
-        async function downloadConfig() {
-            hideFeedback();
-            const urlToFetch = document.getElementById('generatedUrl')?.value;
-            if (!urlToFetch) {
-                showFeedback('请先生成链接。', 'error');
-                return;
-            }
-            showFeedback('正在下载配置文件...', 'info', 0);
-            try {
-                const response = await fetch(urlToFetch);
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`下载失败: ${response.status} ${response.statusText}. 服务端响应: ${errorText}`);
-                }
-                const blob = await response.blob();
-                const disposition = response.headers.get('content-disposition');
-                let fileName = "converted_subscription.yaml";
-                if (disposition && disposition.indexOf('attachment') !== -1) {
-                    const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
-                    let matches = filenameRegex.exec(disposition);
-                    if (matches != null && matches[1]) {
-                        fileName = matches[1].replace(/['"]/g, '').trim();
-                    }
-                } else {
-                    try {
-                        const pathName = new URL(urlToFetch).pathname;
-                        const lastSegment = pathName.substring(pathName.lastIndexOf('/') + 1);
-                        if (lastSegment && (lastSegment.endsWith('.yaml') || lastSegment.endsWith('.yml')) && lastSegment.length < 100) {
-                            fileName = lastSegment;
-                        }
-                    } catch (e) { /* ignore */ }
-                }
-
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(blob);
-                link.download = fileName;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(link.href);
-                showFeedback('配置文件下载成功！', 'success');
-            } catch (error) {
-                console.error('下载配置文件时出错:', error);
-                showFeedback(`下载配置文件时出错: ${error.message}`, 'error', 5000);
-            }
-        }
-    </script>
+    <script src="script.js"></script>
 </body>
 </html>
