@@ -282,17 +282,28 @@ function toggleServiceUrlInput() {
     }
 }
 
+// script.js
 function validateInputs() {
     const remoteUrlInput = document.getElementById('remoteUrl');
-    const remoteUrlError = document.getElementById('remoteUrlError');
+    const remoteUrlError = document.getElementById('remoteUrlError'); // 保持对内联错误元素的引用
+    const generateLinkButton = document.getElementById('generateLinkButton'); // 获取生成按钮
+
     if (!remoteUrlInput || !remoteUrlInput.value.trim()) {
-        if (remoteUrlError) {
-            remoteUrlError.textContent = '请输入有效的原始订阅链接。';
-            remoteUrlError.classList.remove('hidden');
-        }
-        if(remoteUrlInput) remoteUrlInput.focus();
+        const errorMessage = '请输入有效的原始订阅链接。';
+        
+        // 1. 使用 showFeedback 显示主要错误信息
+        showFeedback(errorMessage, 'error', 5000); 
+
+        if(remoteUrlInput) remoteUrlInput.focus(); // 将焦点移到输入框
+
+        // 考虑到 generateAndValidateUrl 中会禁用生成按钮，如果校验失败应确保按钮状态正确
+        // 但通常 validateInputs 是在 generateAndValidateUrl 内部调用的，
+        // generateAndValidateUrl 会处理按钮的启用/禁用。
+        // 此处主要返回 false，由调用者处理后续。
         return false;
     }
+
+    // 如果输入有效，隐藏内联错误提示
     if (remoteUrlError) remoteUrlError.classList.add('hidden');
     return true;
 }
