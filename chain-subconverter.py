@@ -295,6 +295,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             script_file_path = os.path.join(script_dir, "script.js")
             self.serve_static_file(script_file_path, "application/javascript; charset=utf-8")
 
+        elif parsed_url.path == "/favicon.ico": # 新增: 处理 favicon.ico
+            favicon_file_path = os.path.join(script_dir, "favicon.ico")
+            self.serve_static_file(favicon_file_path, "image/x-icon")
+
         # 可以添加更多 elif 来处理其他静态文件，例如 CSS 或图片
         # elif parsed_url.path.endswith(".css"):
         #     file_path = os.path.join(script_dir, parsed_url.path.lstrip('/'))
@@ -307,7 +311,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error_response(f"Resource not found: {self.path}", 404)
 
     # 在 CustomHandler 类或全局定义
-    ALLOWED_EXTENSIONS = {'.html', '.js', '.css'} # 根据你的实际需要添加
+    ALLOWED_EXTENSIONS = {'.html', '.js', '.css', '.ico'} # 根据你的实际需要添加
 
     # 修改 serve_static_file 方法
     def serve_static_file(self, file_path, content_type):
@@ -315,6 +319,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         try:
             # --- 新增扩展名检查 ---
             ext = os.path.splitext(file_path)[1].lower()
+            # logger.info(f">>> File extension: {ext}") # <--- 添加这行
             if ext not in self.ALLOWED_EXTENSIONS: # 引用类或全局变量
                 logger.warning(f"Attempt to access disallowed file type: {ext} for path {file_path}")
                 self.send_error_response(f"File type {ext} not allowed", 403) # Forbidden
@@ -334,6 +339,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_error_response(f"Access denied to: {self.path}", 403)
                 return
 
+            # logger.info(f">>> Checking existence for: {file_path}") # <--- 在文件检查前添加
             if not os.path.exists(file_path) or not os.path.isfile(file_path):
                 logger.warning(f"Static file not found or is not a file: {file_path}")
                 self.send_error_response(f"Resource not found: {self.path}", 404)
