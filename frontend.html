@@ -295,20 +295,19 @@
         </div>
 
         <div class="sub-section" id="dialerConfigGroup">
-            <label class="form-label">链式配置</label>
+            <label class="form-label">链式节点对配置</label>
+            
+            <button id="autoDetectButton" class="button-primary" style="width: auto; padding: 8px 15px; font-size: 0.95em; margin-bottom: 15px; background-color: #5cb85c; border-color: #4cae4c;">
+                🔍 自动识别并填充节点对
+            </button>
+            <small class="input-description" style="margin-top: -10px; margin-bottom:15px;">点击上方按钮尝试自动识别。节点命名需符合规范才能成功识别。</small>
+
             <div id="manualPairsSection">
+                <label for="manualPairsInputsContainer" style="font-size: 0.9em; color: #555; display: block; margin-bottom: 8px;">落地节点 与 前置节点/组 名称:</label>
                 <div id="manualPairsInputsContainer">
-                </div>
+                    </div>
             </div>
-            <div class="toggle-group">
-                <label class="switch">
-                    <input type="checkbox" id="configModeSwitchInput">
-                    <span class="slider"></span>
-                </label>
-                <label class="switch-label-text" for="configModeSwitchInput">自动配置</label>
-            </div>
-            <small id="autoModeText" class="input-description conditional-text hidden">当前为自动配置模式，节点/组命名需符合自动配置命名规范</small>
-            <small id="manualModeText" class="input-description conditional-text">默认为手动配置模式，请输入落地/前置节点名称</small>
+
         </div>
 
         <div class="sub-section" id="serviceAddressGroup">

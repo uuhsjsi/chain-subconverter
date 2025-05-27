@@ -6,12 +6,14 @@ import os
 import re
 from ruamel.yaml import YAML
 from ruamel.yaml.compat import StringIO
-from http.server import ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs, unquote
-import mimetypes # 导入 mimetypes 模块
+from http.server import ThreadingHTTPServer # 使用 ThreadingHTTPServer 处理并发请求
+from urllib.parse import urlparse, parse_qs, unquote, urlencode # 增加了 urlencode
+import mimetypes
+import datetime
+import json
+import traceback
 
 # --- 配置日志开始 ---
-# (日志配置部分保持不变)
 LOG_FILE = "logs/server.log"
 LOG_DIR = os.path.dirname(LOG_FILE)
 if not os.path.exists(LOG_DIR):
@@ -33,23 +35,19 @@ logger.addHandler(console_handler)
 # --- 配置日志结束 ---
 
 # --- 全局配置 ---
-# (全局配置部分保持不变)
 PORT = int(os.getenv("PORT", 11200))
-REGION_MAPPING = [
-    {"region_node_keywords": ["HK", "HongKong", "Hong Kong", "香港"],
-     "identifier_patterns": [r"\bhk\b", r"hong\s*kong", r"香港"]},
-    {"region_node_keywords": ["US", "UnitedStates", "United States", "美国"],
-     "identifier_patterns": [r"\bus\b", r"united\s*states", r"america", r"美国"]},
-    {"region_node_keywords": ["JP", "Japan", "日本"],
-     "identifier_patterns": [r"\bjp\b", r"japan", r"日本"]},
-    {"region_node_keywords": ["SG", "Singapore", "新加坡"],
-     "identifier_patterns": [r"\bsg\b", r"singapore", r"新加坡"]},
-    {"region_node_keywords": ["TW", "Taiwan", "台湾"],
-     "identifier_patterns": [r"\btw\b", r"taiwan", r"台湾"]},
-    {"region_node_keywords": ["KR", "Korea", "韩国"],
-     "identifier_patterns": [r"\bkr\b", r"korea", r"韩国"]},
+
+# 更新并重命名 REGION_MAPPING
+REGION_KEYWORD_CONFIG = [
+    {"id": "HK", "name": "Hong Kong", "keywords": ["HK", "HongKong", "Hong Kong", "香港", "🇭🇰"]},
+    {"id": "US", "name": "United States", "keywords": ["US", "USA", "UnitedStates", "United States", "美国", "🇺🇸"]},
+    {"id": "JP", "name": "Japan", "keywords": ["JP", "Japan", "日本", "🇯🇵"]},
+    {"id": "SG", "name": "Singapore", "keywords": ["SG", "Singapore", "新加坡", "🇸🇬"]},
+    {"id": "TW", "name": "Taiwan", "keywords": ["TW", "Taiwan", "台湾", "🇼🇸"]},
+    {"id": "KR", "name": "Korea", "keywords": ["KR", "Korea", "韩国", "🇰🇷"]},
+    # 可以根据需要添加更多区域
 ]
-LANDING_NODE_KEYWORDS = ["Landing", "落地"]
+LANDING_NODE_KEYWORDS = ["Landing", "落地"] # 用于自动识别落地节点
 
 yaml = YAML()
 yaml.preserve_quotes = True
@@ -58,350 +56,602 @@ yaml.width = float('inf')
 yaml.explicit_start = True
 # --- 全局配置结束 ---
 
-# --- process_subscription 和 find_matching_dialer_group 函数保持不变 ---
-def find_matching_dialer_group(node_name, all_proxy_groups, current_logger):
-    node_name_lower = node_name.lower()
-    best_match_group = None
-    highest_score = -1
-    identified_region_patterns_for_search = None
+# --- 日志辅助函数 ---
+def _add_log_entry(logs_list, level, message, an_exception=None):
+    """将日志条目添加到列表，并使用标准logger记录。"""
+    timestamp = datetime.datetime.utcnow().isoformat() + "Z"
+    log_entry = {"timestamp": timestamp, "level": level.upper(), "message": str(message)}
+    logs_list.append(log_entry)
 
-    for region_info in REGION_MAPPING:
-        if any(kw.lower() in node_name_lower for kw in region_info["region_node_keywords"]):
-            identified_region_patterns_for_search = region_info["identifier_patterns"]
-            current_logger.info(f"Node '{node_name}' identified with region. Will search groups using patterns: {identified_region_patterns_for_search}")
-            break
+    if level.upper() == "ERROR":
+        logger.error(message, exc_info=an_exception if an_exception else False)
+    elif level.upper() == "WARN":
+        logger.warning(message)
+    elif level.upper() == "DEBUG":
+        logger.debug(message)
+    else: # INFO
+        logger.info(message)
 
-    if not identified_region_patterns_for_search:
-        current_logger.warning(f"No region identified in landing node name: '{node_name}' based on region_node_keywords.")
-        return None
+# --- 核心逻辑函数 ---
+def apply_node_pairs_to_config(config_object, node_pairs_list):
+    """
+    将节点对应用到配置对象中。
+    config_object: 已解析的YAML内容 (Python字典)。
+    node_pairs_list: 一个包含 (landing_node_name, front_node_name) 元组的列表。
+    返回: (success_boolean, modified_config_object, logs_list)
+    """
+    logs = []
+    _add_log_entry(logs, "info", f"开始应用 {len(node_pairs_list)} 个节点对到配置中。")
 
-    current_logger.info(f"Attempting to find dialer group for node '{node_name}' using region patterns: {identified_region_patterns_for_search}")
-    for group in all_proxy_groups:
-        group_name = group.get("name", "")
-        group_name_lower = group_name.lower()
+    if not isinstance(config_object, dict):
+        _add_log_entry(logs, "error", "无效的配置对象：不是一个字典。")
+        return False, config_object, logs
+        
+    proxies = config_object.get("proxies")
+    proxy_groups = config_object.get("proxy-groups")
 
-        if not (group_name and group.get("type")):
+    if not isinstance(proxies, list):
+        _add_log_entry(logs, "error", "配置对象中缺少有效的 'proxies' 部分。")
+        return False, config_object, logs
+    # proxy_groups 可以不存在或为空，但如果存在，应该是列表
+    if "proxy-groups" in config_object and not isinstance(proxy_groups, list):
+        _add_log_entry(logs, "warn", "配置对象中的 'proxy-groups' 部分无效（不是列表），可能会影响组操作。")
+        proxy_groups = [] # 将其视为空列表以避免后续错误
+
+    applied_count = 0
+    for landing_name, front_name in node_pairs_list:
+        _add_log_entry(logs, "debug", f"尝试应用节点对: 落地='{landing_name}', 前置='{front_name}'.")
+        
+        landing_node_found = False
+        for proxy_node in proxies:
+            if isinstance(proxy_node, dict) and proxy_node.get("name") == landing_name:
+                landing_node_found = True
+                proxy_node["dialer-proxy"] = front_name
+                _add_log_entry(logs, "info", f"成功为落地节点 '{landing_name}' 设置 'dialer-proxy' 为 '{front_name}'.")
+                applied_count += 1
+
+                # 尝试从前置组中移除落地节点（如果前置是组）
+                if isinstance(proxy_groups, list):
+                    for grp in proxy_groups:
+                        if isinstance(grp, dict) and grp.get("name") == front_name:
+                            group_proxies_list = grp.get("proxies")
+                            if isinstance(group_proxies_list, list) and landing_name in group_proxies_list:
+                                try:
+                                    group_proxies_list.remove(landing_name)
+                                    _add_log_entry(logs, "info", f"已从前置组 '{front_name}' 的节点列表中移除落地节点 '{landing_name}'。")
+                                except ValueError:
+                                    _add_log_entry(logs, "warn", f"尝试从前置组 '{front_name}' 移除落地节点 '{landing_name}' 时失败 (ValueError)。")
+                            break # 已找到并处理前置组
+                break # 已找到并处理落地节点
+
+        if not landing_node_found:
+            _add_log_entry(logs, "warn", f"节点对中的落地节点 '{landing_name}' 未在 'proxies' 列表中找到，已跳过此对。")
+
+    if applied_count == len(node_pairs_list) and len(node_pairs_list) > 0:
+        _add_log_entry(logs, "info", f"成功应用所有 {applied_count} 个节点对。")
+    elif applied_count > 0:
+        _add_log_entry(logs, "warn", f"成功应用 {applied_count} 个（共 {len(node_pairs_list)} 个）节点对。部分节点对可能被跳过。")
+    elif len(node_pairs_list) > 0 : # applied_count is 0
+        _add_log_entry(logs, "error", "未能应用任何提供的节点对。")
+        return False, config_object, logs # 如果一个都没应用成功，可以考虑整体失败
+    
+    # 如果没有任何节点对需要应用，也视为成功
+    if len(node_pairs_list) == 0:
+        _add_log_entry(logs, "info", "没有提供节点对，未进行修改。")
+
+    return True, config_object, logs
+
+
+# --- 关键字匹配辅助函数 ---
+def _keyword_match(text_to_search, keyword_to_find):
+    """
+    执行关键字匹配。
+    - 如果关键字主要包含英文字符，则使用正则表达式进行全词/词组边界匹配（忽略大小写）。
+    - 否则（例如纯中文），使用直接子字符串包含匹配（忽略大小写）。
+    """
+    if not text_to_search or not keyword_to_find:
+        return False
+
+    text_lower = text_to_search.lower()
+    keyword_lower = keyword_to_find.lower()
+
+    # 判断关键字是否包含英文字母
+    if re.search(r'[a-zA-Z]', keyword_to_find):  # 英文或中英混合关键字规则
+        # (?<![a-zA-Z]) 表示前面不是英文字母 (边界)
+        # (?![a-zA-Z]) 表示后面不是英文字母 (边界)
+        # re.escape确保关键字中的特殊字符被正确处理
+        pattern_str = r'(?<![a-zA-Z])' + re.escape(keyword_lower) + r'(?![a-zA-Z])'
+        try:
+            if re.search(pattern_str, text_lower): # re.search会忽略大小写，因为text_lower和pattern_str中的keyword_lower都是小写
+                                                # 如果要严格通过pattern控制，可以给re.search加re.IGNORECASE，并用原始keyword_to_find
+                return True
+        except re.error as e:
+            # 一般来说，由配置提供的关键字不应导致正则错误。如果发生，需要检查关键字配置。
+            # 此处我们简单地认为匹配失败。可以在日志中记录此错误，但此辅助函数目前不直接操作日志列表。
+            logger.debug(f"Regex error during keyword match for keyword '{keyword_to_find}': {e}") # 使用全局logger记录调试信息
+            pass 
+    else:  # 非英文 (例如纯中文) 关键字规则
+        if keyword_lower in text_lower:
+            return True
+    
+    return False
+
+# --- 核心逻辑函数 ---
+# apply_node_pairs_to_config 函数 (来自上次代码) 保持不变
+
+def perform_auto_detection(config_object, region_keyword_config, landing_node_keywords_config):
+    """
+    分析配置对象，自动检测落地节点并建议 (落地节点, 前置节点/组) 对。
+    返回: (suggested_pairs_list, logs_list)
+    suggested_pairs_list 是 [{"landing": "name", "front": "name"}, ...] 格式。
+    """
+    logs = []
+    _add_log_entry(logs, "info", "开始自动节点对检测。")
+    suggested_pairs = []
+
+    if not isinstance(config_object, dict):
+        _add_log_entry(logs, "error", "无效的配置对象：不是一个字典。")
+        return [], logs
+
+    proxies = config_object.get("proxies")
+    proxy_groups = config_object.get("proxy-groups") # 可能为 None 或非列表
+
+    if not isinstance(proxies, list):
+        _add_log_entry(logs, "error", "配置对象中缺少有效的 'proxies' 列表，无法进行自动检测。")
+        return [], logs
+    
+    if not isinstance(proxy_groups, list): # 如果 proxy_groups 无效或缺失，记录警告
+        _add_log_entry(logs, "warn", "'proxy-groups' 部分缺失或无效，自动检测前置组的功能将受影响。")
+        # 在后续逻辑中，对 proxy_groups 的使用需要考虑到它可能不是一个有效的列表
+
+    for proxy_node in proxies:
+        if not isinstance(proxy_node, dict):
+            _add_log_entry(logs, "debug", f"跳过 'proxies' 中的无效条目: {proxy_node}")
+            continue
+        
+        proxy_name = proxy_node.get("name")
+        if not proxy_name:
+            _add_log_entry(logs, "debug", f"跳过 'proxies' 中缺少名称的节点: {proxy_node}")
             continue
 
-        current_score_for_this_group = 0
-        match_details = []
-        for pattern in identified_region_patterns_for_search:
-            try:
-                if re.search(pattern, group_name_lower, re.IGNORECASE):
-                    score_for_this_pattern = len(pattern)
-                    if pattern.startswith(r"\b") and pattern.endswith(r"\b"):
-                        score_for_this_pattern += 10
-                    current_score_for_this_group += score_for_this_pattern
-                    match_details.append(pattern)
-            except re.error as e:
-                current_logger.error(f"Regex error with pattern '{pattern}' while searching in group '{group_name}': {e}")
-                continue
+        # 1. 识别落地节点
+        is_landing = False
+        for l_kw in landing_node_keywords_config:
+            if _keyword_match(proxy_name, l_kw):
+                is_landing = True
+                break
+        
+        if not is_landing:
+            _add_log_entry(logs, "debug", f"节点 '{proxy_name}' 未被识别为落地节点，跳过。")
+            continue
+        
+        _add_log_entry(logs, "info", f"节点 '{proxy_name}' 被识别为潜在的落地节点。开始为其查找前置...")
 
-        if current_score_for_this_group > 0:
-            current_logger.debug(f"Group '{group_name}' (score: {current_score_for_this_group}) matched patterns: {match_details} for node '{node_name}'.")
-            if current_score_for_this_group > highest_score:
-                highest_score = current_score_for_this_group
-                best_match_group = group
-                current_logger.info(f"New best match for node '{node_name}': group '{group_name}' with score {highest_score}.")
-            elif current_score_for_this_group == highest_score and best_match_group:
-                if len(group_name) < len(best_match_group.get("name", "")):
-                    current_logger.debug(f"Group '{group_name}' has same score but shorter name than '{best_match_group.get('name')}'. Updating best match.")
-                    best_match_group = group
-                else:
-                    current_logger.debug(f"Group '{group_name}' has same score as current best '{best_match_group.get('name')}'. Keeping current best.")
+        # 2. 确定落地节点区域
+        matched_region_ids = set()
+        for region_def in region_keyword_config:
+            for r_kw in region_def.get("keywords", []):
+                if _keyword_match(proxy_name, r_kw):
+                    matched_region_ids.add(region_def.get("id"))
+                    break # 当前 region_def 的一个关键字匹配成功即可
+        
+        if not matched_region_ids:
+            _add_log_entry(logs, "warn", f"落地节点 '{proxy_name}': 未能识别出任何区域。跳过此节点。")
+            continue
+        if len(matched_region_ids) > 1:
+            _add_log_entry(logs, "error", f"落地节点 '{proxy_name}': 识别出多个区域 {list(matched_region_ids)}，区域不明确。跳过此节点。")
+            continue
+        
+        target_region_id = matched_region_ids.pop()
+        _add_log_entry(logs, "info", f"落地节点 '{proxy_name}': 成功识别区域ID为 '{target_region_id}'.")
 
-    if best_match_group:
-        current_logger.info(f"Final best matching dialer group for node '{node_name}' is '{best_match_group['name']}' with score {highest_score}.")
-    else:
-        current_logger.warning(f"No dialer group found for node '{node_name}' that matches its identified region patterns.")
+        target_region_keywords_for_dialer_search = []
+        for region_def in region_keyword_config:
+            if region_def.get("id") == target_region_id:
+                target_region_keywords_for_dialer_search = region_def.get("keywords", [])
+                break
+        
+        if not target_region_keywords_for_dialer_search:
+            _add_log_entry(logs, "error", f"内部错误：区域ID '{target_region_id}' 未找到对应的关键字列表。跳过落地节点 '{proxy_name}'.")
+            continue
 
-    return best_match_group
+        # 3. 查找前置代理 (Dialer Proxy)
+        found_dialer_name = None
+        
+        # 3a. 优先查找节点组
+        if isinstance(proxy_groups, list): # 确保 proxy_groups 是有效列表才进行查找
+            matching_groups = []
+            for group in proxy_groups:
+                if not isinstance(group, dict): continue
+                group_name = group.get("name")
+                if not group_name: continue
+                
+                for r_kw in target_region_keywords_for_dialer_search:
+                    if _keyword_match(group_name, r_kw):
+                        matching_groups.append(group_name)
+                        break # 当前组已匹配，无需再用此区域的其他关键字匹配
+            
+            if len(matching_groups) == 1:
+                found_dialer_name = matching_groups[0]
+                _add_log_entry(logs, "info", f"落地节点 '{proxy_name}': 在区域 '{target_region_id}' 找到唯一匹配的前置组: '{found_dialer_name}'.")
+            elif len(matching_groups) > 1:
+                _add_log_entry(logs, "error", f"落地节点 '{proxy_name}': 在区域 '{target_region_id}' 找到多个匹配的前置组 {matching_groups}，无法自动选择。跳过此节点。")
+                continue # 跳到下一个落地节点
+            else: # len(matching_groups) == 0
+                _add_log_entry(logs, "info", f"落地节点 '{proxy_name}': 在区域 '{target_region_id}' 未找到匹配的前置组。将尝试查找节点。")
+        else:
+            _add_log_entry(logs, "debug", "跳过查找前置组，因为 'proxy-groups' 缺失或无效。")
 
-
-def process_subscription(remote_url, manual_dialer_enabled, manual_pairs_list, current_logger):
-    current_logger.info(f"Processing subscription for REMOTE_URL: {remote_url}")
-    current_logger.info(f"Manual dialer enabled (0=auto, 1=manual): {manual_dialer_enabled}")
-    if int(manual_dialer_enabled) == 1:
-        current_logger.info(f"Manual pairs (LandingFromUI:FrontFromUI): {manual_pairs_list}")
-
-    try:
-        response = requests.get(remote_url, timeout=15)
-        response.raise_for_status()
-        current_logger.info(f"Response status code from remote: {response.status_code}")
-    except requests.Timeout:
-        current_logger.error(f"Request to remote_url '{remote_url}' timed out.")
-        raise
-    except requests.RequestException as e:
-        current_logger.error(f"Request error for remote_url '{remote_url}': {e}")
-        raise
-
-    try:
-        config_content = response.content
-        if config_content.startswith(b'\xef\xbb\xbf'):
-            current_logger.info("UTF-8 BOM detected and removed from remote content.")
-            config_content = config_content[3:]
-        config = yaml.load(config_content)
-
-        if not isinstance(config, dict) or "proxies" not in config or "proxy-groups" not in config:
-            current_logger.error("Invalid YAML from remote or missing 'proxies'/'proxy-groups' section")
-            raise ValueError("Invalid YAML from remote or missing 'proxies'/'proxy-groups' section")
-    except Exception as e:
-        current_logger.error(f"Error parsing YAML from remote_url '{remote_url}': {e}", exc_info=True)
-        raise ValueError(f"Error parsing YAML from remote: {e}")
-
-    proxies = config.get("proxies", [])
-    proxy_groups = config.get("proxy-groups", [])
-
-    if int(manual_dialer_enabled) == 1:
-        current_logger.info("Using manual dialer mode.")
-        if not manual_pairs_list:
-            current_logger.warning("Manual dialer mode selected, but no valid manual_pairs provided.")
-
-        for landing_name_ui, front_name_ui in manual_pairs_list:
-            found_landing_node_for_manual_config = False
-            for proxy_node in proxies:
-                if proxy_node.get("name") == landing_name_ui:
-                    proxy_node["dialer-proxy"] = front_name_ui
-                    current_logger.info(f"Applied manual dialer-proxy '{front_name_ui}' TO landing node '{landing_name_ui}'")
-                    found_landing_node_for_manual_config = True
-
-                    target_dialer_group_obj = None
-                    for grp in proxy_groups:
-                        if grp.get("name") == front_name_ui:
-                            target_dialer_group_obj = grp
-                            break
-
-                    if target_dialer_group_obj:
-                        group_proxies_list = target_dialer_group_obj.get("proxies")
-                        if isinstance(group_proxies_list, list):
-                            if landing_name_ui in group_proxies_list:
-                                try:
-                                    group_proxies_list.remove(landing_name_ui)
-                                    current_logger.info(f"Removed landing node '{landing_name_ui}' from proxy list of its dialer group '{front_name_ui}' to prevent recursion.")
-                                except ValueError:
-                                    current_logger.warning(f"Landing node '{landing_name_ui}' reported in dialer group '{front_name_ui}' but remove failed.")
-                        else:
-                            current_logger.warning(f"Dialer group '{front_name_ui}' for landing node '{landing_name_ui}' does not have a valid 'proxies' list.")
-                    else:
-                        current_logger.info(f"Dialer target '{front_name_ui}' for landing node '{landing_name_ui}' is not a proxy group (or not found). No group-based removal check needed.")
-                    break
-            if not found_landing_node_for_manual_config:
-                current_logger.warning(f"Manual mode: Landing node '{landing_name_ui}' (from UI left column) not found in proxies list.")
-
-    else: # Automatic mode (manual_dialer_enabled == 0)
-        current_logger.info("Using automatic dialer mode")
-        for proxy_idx, proxy_node in enumerate(proxies):
-            proxy_name = proxy_node.get("name", "")
-            proxy_name_lower = proxy_name.lower()
-
-            is_landing_node_type = any(kw.lower() in proxy_name_lower for kw in LANDING_NODE_KEYWORDS)
-            if not is_landing_node_type:
-                continue
-
-            current_logger.info(f"Processing potential landing node (idx: {proxy_idx}): '{proxy_name}' for auto dialing.")
-            dialer_proxy_group_obj = find_matching_dialer_group(proxy_name, proxy_groups, current_logger)
-
-            if dialer_proxy_group_obj and dialer_proxy_group_obj.get("name"):
-                dialer_proxy_group_name = dialer_proxy_group_obj["name"]
-                proxy_node["dialer-proxy"] = dialer_proxy_group_name
-                current_logger.info(f"Applied auto dialer-proxy '{dialer_proxy_group_name}' for landing node '{proxy_name}'")
-
-                group_proxies_list = dialer_proxy_group_obj.get("proxies")
-                if isinstance(group_proxies_list, list):
-                    if proxy_name in group_proxies_list:
-                        try:
-                            group_proxies_list.remove(proxy_name)
-                            current_logger.info(f"Removed landing node '{proxy_name}' from its dialer group '{dialer_proxy_group_name}' proxies list.")
-                        except ValueError:
-                            current_logger.warning(f"Node '{proxy_name}' was reported in group '{dialer_proxy_group_name}' but remove failed.")
-            else:
-                current_logger.warning(f"No suitable dialer group found for landing node '{proxy_name}'. It will not be configured for auto chain dialing.")
-
-    output = StringIO()
-    yaml.dump(config, output)
-    return output.getvalue()
-# --- process_subscription 和 find_matching_dialer_group 函数结束 ---
+        # 3b. 如果未找到唯一节点组，则查找代理节点
+        if not found_dialer_name:
+            matching_nodes = []
+            for candidate_proxy in proxies:
+                if not isinstance(candidate_proxy, dict): continue
+                candidate_name = candidate_proxy.get("name")
+                if not candidate_name or candidate_name == proxy_name: # 排除自身
+                    continue
+                
+                for r_kw in target_region_keywords_for_dialer_search:
+                    if _keyword_match(candidate_name, r_kw):
+                        matching_nodes.append(candidate_name)
+                        break # 当前候选节点已匹配
+            
+            if len(matching_nodes) == 1:
+                found_dialer_name = matching_nodes[0]
+                _add_log_entry(logs, "info", f"落地节点 '{proxy_name}': 在区域 '{target_region_id}' 找到唯一匹配的前置节点: '{found_dialer_name}'.")
+            elif len(matching_nodes) > 1:
+                _add_log_entry(logs, "error", f"落地节点 '{proxy_name}': 在区域 '{target_region_id}' 找到多个匹配的前置节点 {matching_nodes}，无法自动选择。跳过此节点。")
+                continue # 跳到下一个落地节点
+            else: # len(matching_nodes) == 0
+                 _add_log_entry(logs, "warn", f"落地节点 '{proxy_name}': 在区域 '{target_region_id}' 也未能找到匹配的前置节点。")
 
 
+        # 4. 如果成功找到前置，添加到结果列表
+        if found_dialer_name:
+            suggested_pairs.append({"landing": proxy_name, "front": found_dialer_name})
+            _add_log_entry(logs, "info", f"成功为落地节点 '{proxy_name}' 自动配置前置为 '{found_dialer_name}'.")
+        # else: (已在上面记录了未找到的警告)
+
+    _add_log_entry(logs, "info", f"自动节点对检测完成，共找到 {len(suggested_pairs)} 对建议。")
+    if not suggested_pairs and len(proxies) > 0: # 有节点但没找到任何配对
+        _add_log_entry(logs, "warn", "未自动检测到任何可用的节点对。请检查节点命名是否符合预设的关键字规则，或调整关键字配置。")
+
+    return suggested_pairs, logs
+
+# --- HTTP 处理器 ---
 class CustomHandler(http.server.SimpleHTTPRequestHandler):
+    # 静态文件服务的允许扩展名列表
+    ALLOWED_EXTENSIONS = {'.html', '.js', '.css', '.ico', '.png', '.jpg', '.jpeg', '.gif'}
+
+    def send_json_response(self, data_dict, http_status_code):
+        """辅助方法，用于发送JSON响应。"""
+        try:
+            response_body = json.dumps(data_dict, ensure_ascii=False).encode('utf-8')
+            self.send_response(http_status_code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(response_body)))
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate") # 禁止缓存API响应
+            self.end_headers()
+            self.wfile.write(response_body)
+        except Exception as e:
+            _error_logs = []
+            _add_log_entry(_error_logs, "error", f"发送JSON响应时发生严重内部错误: {e}", e)
+            # 尝试发送一个极简的JSON错误，如果连这个都失败，就没办法了
+            try:
+                fallback_error = {"success": False, "message": "服务器在格式化响应时发生严重错误。", "logs": _error_logs}
+                response_body = json.dumps(fallback_error, ensure_ascii=False).encode('utf-8')
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(response_body)))
+                self.end_headers()
+                self.wfile.write(response_body)
+            except: # 终极捕获，如果连发送JSON错误信息都失败
+                self.send_response(500) # 发送一个通用的500状态码
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(b"Critical server error during response generation.")
+
+
+    def _get_config_from_remote(self, remote_url, logs_list_ref):
+        """辅助方法：从远程URL获取并解析YAML配置。"""
+        if not remote_url:
+            _add_log_entry(logs_list_ref, "error", "必须提供 'remote_url'。")
+            return None
+        try:
+            _add_log_entry(logs_list_ref, "info", f"正在请求远程订阅: {remote_url}")
+            response = requests.get(remote_url, timeout=15)
+            response.raise_for_status()
+            _add_log_entry(logs_list_ref, "info", f"远程订阅获取成功，状态码: {response.status_code}")
+            
+            config_content = response.content
+            if config_content.startswith(b'\xef\xbb\xbf'): #移除BOM
+                config_content = config_content[3:]
+                _add_log_entry(logs_list_ref, "debug", "已移除UTF-8 BOM。")
+
+            config_object = yaml.load(config_content)
+            if not isinstance(config_object, dict) or \
+               not isinstance(config_object.get("proxies"), list): # 至少要有proxies
+                _add_log_entry(logs_list_ref, "error", "远程YAML格式无效或缺少 'proxies' 列表。")
+                return None
+            _add_log_entry(logs_list_ref, "debug", "远程配置解析成功。")
+            return config_object
+        except requests.Timeout:
+            _add_log_entry(logs_list_ref, "error", f"请求远程订阅 '{remote_url}' 超时。")
+            return None
+        except requests.RequestException as e:
+            _add_log_entry(logs_list_ref, "error", f"请求远程订阅 '{remote_url}' 发生错误: {e}", e)
+            return None
+        except Exception as e: # ruamel.yaml.YAMLError is a subclass of Exception
+            _add_log_entry(logs_list_ref, "error", f"解析远程订阅 '{remote_url}' 的YAML内容时出错: {e}", e)
+            return None
+
+    def do_POST(self):
+        """处理POST请求，主要用于 /api/validate_configuration。"""
+        parsed_url = urlparse(self.path)
+        logs = [] # 初始化操作日志列表
+
+        if parsed_url.path == "/api/validate_configuration":
+            try:
+                content_length = int(self.headers.get('Content-Length', 0))
+                if content_length == 0:
+                    _add_log_entry(logs, "error", "请求体为空。")
+                    self.send_json_response({
+                        "success": False, 
+                        "message": "请求体为空。", 
+                        "logs": logs
+                    }, 400)
+                    return
+
+                post_body = self.rfile.read(content_length)
+                _add_log_entry(logs, "debug", f"收到的原始POST数据: {post_body[:200]}") # 只记录前200字节
+                data = json.loads(post_body.decode('utf-8'))
+                
+                remote_url = data.get("remote_url")
+                # node_pairs 应为 [{"landing": "L1", "front": "F1"}, ...] 格式
+                # 需要转换为 apply_node_pairs_to_config 期望的 [("L1", "F1"), ...] 格式
+                node_pairs_from_request = data.get("node_pairs", [])
+                if not isinstance(node_pairs_from_request, list):
+                     _add_log_entry(logs, "error", "请求中的 'node_pairs' 格式无效，应为列表。")
+                     raise ValueError("node_pairs格式无效")
+
+                node_pairs_tuples = []
+                for pair_dict in node_pairs_from_request:
+                    if isinstance(pair_dict, dict) and "landing" in pair_dict and "front" in pair_dict:
+                        node_pairs_tuples.append((str(pair_dict["landing"]), str(pair_dict["front"])))
+                    else:
+                        _add_log_entry(logs, "warn", f"提供的节点对 '{pair_dict}' 格式不正确，已跳过。")
+                
+                _add_log_entry(logs, "info", f"开始验证配置: remote_url='{remote_url}', 节点对数量={len(node_pairs_tuples)}")
+
+                config_object = self._get_config_from_remote(remote_url, logs)
+                if config_object is None: # _get_config_from_remote 内部已记录错误到logs
+                    self.send_json_response({
+                        "success": False,
+                        "message": "无法获取或解析远程配置以进行验证。" + (f" 详情: {logs[-1]['message']}" if logs else ""),
+                        "logs": logs
+                    }, 400) # 400 Bad Request 或 502 Bad Gateway 取决于具体错误
+                    return
+
+                success, _modified_obj, apply_logs = apply_node_pairs_to_config(config_object, node_pairs_tuples)
+                logs.extend(apply_logs)
+
+                if success:
+                    _add_log_entry(logs, "info", "配置验证成功。")
+                    self.send_json_response({
+                        "success": True,
+                        "message": "配置验证成功。",
+                        "logs": logs
+                    }, 200)
+                else:
+                    _add_log_entry(logs, "error", "配置验证失败。")
+                    self.send_json_response({
+                        "success": False,
+                        "message": "配置验证失败。" + (f" 详情: {logs[-1]['message']}" if logs else ""),
+                        "logs": logs
+                    }, 400) # 或 422 Unprocessable Entity
+            
+            except json.JSONDecodeError as e:
+                _add_log_entry(logs, "error", f"解析请求体JSON时出错: {e}", e)
+                self.send_json_response({
+                    "success": False, 
+                    "message": "请求体JSON格式错误。", 
+                    "logs": logs
+                }, 400)
+            except ValueError as e: # 由我们自己逻辑抛出的，例如node_pairs格式问题
+                 _add_log_entry(logs, "error", f"请求数据处理错误: {e}", e)
+                 self.send_json_response({"success": False, "message": f"请求数据错误: {e}", "logs": logs}, 400)
+            except Exception as e:
+                _add_log_entry(logs, "error", f"处理 /api/validate_configuration 时发生意外错误: {e}", e)
+                self.send_json_response({
+                    "success": False, 
+                    "message": "服务器内部错误。", 
+                    "logs": logs
+                }, 500)
+        else:
+            self.send_error_response("此路径不支持POST请求。", 405)
+
+
     def do_GET(self):
         parsed_url = urlparse(self.path)
-        script_dir = os.path.dirname(os.path.abspath(__file__)) # 获取脚本所在目录
+        query_params = parse_qs(parsed_url.query)
+        logs = [] # 初始化操作日志列表
 
-        if parsed_url.path == "/subscription.yaml":
-            query_params = parse_qs(parsed_url.query)
-            logger.info(f"Request for /subscription.yaml with params: {query_params}")
+        # API 端点
+        if parsed_url.path == "/api/auto_detect_pairs":
+            remote_url = query_params.get('remote_url', [None])[0]
+            _add_log_entry(logs, "info", f"收到 /api/auto_detect_pairs 请求: remote_url='{remote_url}'")
 
-            remote_url_list = query_params.get('remote_url', [])
-            if not remote_url_list or not remote_url_list[0]:
-                self.send_error_response("Missing 'remote_url' query parameter.", 400)
+            config_object = self._get_config_from_remote(remote_url, logs)
+            if config_object is None:
+                self.send_json_response({
+                    "success": False, 
+                    "message": "无法获取或解析远程配置。" + (f" 详情: {logs[-1]['message']}" if logs else ""),
+                    "suggested_pairs": [], 
+                    "logs": logs
+                }, 400) # 或 502
                 return
-            remote_url = remote_url_list[0]
 
-            try:
-                manual_dialer_enabled_str = query_params.get('manual_dialer_enabled', ['1'])[0]
-                if manual_dialer_enabled_str not in ['0', '1']:
-                    logger.warning(f"Invalid manual_dialer_enabled value '{manual_dialer_enabled_str}', defaulting to '1' (manual).")
-                    manual_dialer_enabled_str = '1'
-                manual_dialer_enabled = int(manual_dialer_enabled_str)
+            suggested_pairs, detect_logs = perform_auto_detection(config_object, REGION_KEYWORD_CONFIG, LANDING_NODE_KEYWORDS)
+            logs.extend(detect_logs)
+            
+            success_flag = True if suggested_pairs else False # 可以根据是否有结果来定，或内部逻辑判断
+            final_message = f"自动检测完成，找到 {len(suggested_pairs)} 对。" if success_flag else "自动检测未找到可用节点对。"
+            if not success_flag and len(logs) > 0 and logs[-1]['level'] == "WARN": # 如果最后一条是警告，也附加上
+                 final_message += f" {logs[-1]['message']}"
 
-                manual_pairs_encoded_str = query_params.get('manual_pairs', [''])[0]
-                manual_pairs_str = ""
-                if manual_pairs_encoded_str:
-                    manual_pairs_str = unquote(manual_pairs_encoded_str)
 
-                manual_pairs_list = []
-                if manual_dialer_enabled == 1 and manual_pairs_str:
-                    pairs = manual_pairs_str.split(',')
-                    for pair_str in pairs:
-                        if not pair_str.strip(): continue
-                        parts = pair_str.split(':', 1)
-                        if len(parts) == 2 and parts[0].strip() and parts[1].strip():
-                            manual_pairs_list.append((parts[0].strip(), parts[1].strip()))
-                        else:
-                            logger.warning(f"Malformed manual pair string part: '{pair_str}', skipping.")
+            self.send_json_response({
+                "success": success_flag,
+                "message": final_message,
+                "suggested_pairs": suggested_pairs,
+                "logs": logs
+            }, 200)
 
-                modified_yaml = process_subscription(
-                    remote_url,
-                    manual_dialer_enabled,
-                    manual_pairs_list,
-                    logger
-                )
+        elif parsed_url.path == "/subscription.yaml":
+            remote_url = query_params.get('remote_url', [None])[0]
+            # manual_pairs 参数格式: "Landing1:Front1,Landing2:Front2"
+            manual_pairs_str = unquote(query_params.get('manual_pairs', [''])[0])
+            
+            node_pairs_list = []
+            if manual_pairs_str:
+                pairs = manual_pairs_str.split(',')
+                for pair_str in pairs:
+                    if not pair_str.strip(): continue
+                    parts = pair_str.split(':', 1)
+                    if len(parts) == 2 and parts[0].strip() and parts[1].strip():
+                        node_pairs_list.append((parts[0].strip(), parts[1].strip()))
+                    else:
+                        _add_log_entry(logs, "warn", f"解析 'manual_pairs' 中的 '{pair_str}' 格式不正确，已跳过。")
+            
+            _add_log_entry(logs, "info", f"收到 /subscription.yaml 请求: remote_url='{remote_url}', manual_pairs='{manual_pairs_str}' (解析后 {len(node_pairs_list)} 对)")
 
-                self.send_response(200)
-                self.send_header("Content-Type", "text/yaml; charset=utf-8")
-                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-                self.end_headers()
-                self.wfile.write(modified_yaml.encode("utf-8"))
+            config_object = self._get_config_from_remote(remote_url, logs)
+            if config_object is None:
+                # 对于直接请求YAML的端点，失败时返回纯文本错误
+                self.send_error_response(f"错误: 无法获取或解析远程配置。详情: {logs[-1]['message'] if logs else '未知错误'}", 502)
+                return
 
-            except requests.Timeout:
-                logger.error("Request to remote_url timed out")
-                self.send_error_response("Request to remote_url timed out", 503)
-            except requests.RequestException as e:
-                logger.error(f"Request error for remote_url: {str(e)}")
-                self.send_error_response(f"Error fetching remote_url: {str(e)}", 502)
-            except ValueError as e:
-                logger.error(f"Processing error: {str(e)}", exc_info=True)
-                self.send_error_response(f"Processing error: {str(e)}", 400 if "Invalid YAML" in str(e) or "Missing 'remote_url'" in str(e) else 500)
-            except Exception as e:
-                logger.error(f"Unexpected error: {str(e)}", exc_info=True)
-                self.send_error_response(f"Unexpected server error: {str(e)}", 500)
+            success, modified_config, apply_logs = apply_node_pairs_to_config(config_object, node_pairs_list)
+            logs.extend(apply_logs) # 主要用于服务器端日志记录
 
-        elif parsed_url.path == "/" or parsed_url.path == "/frontend.html": # 处理 / 和 /frontend.html
-            frontend_file_path = os.path.join(script_dir, "frontend.html")
-            self.serve_static_file(frontend_file_path, "text/html; charset=utf-8")
+            if success:
+                try:
+                    output = StringIO()
+                    yaml.dump(modified_config, output)
+                    final_yaml_string = output.getvalue()
+                    _add_log_entry(logs, "info", "成功生成YAML配置。")
 
-        elif parsed_url.path == "/script.js": # 新增: 处理 /script.js
-            script_file_path = os.path.join(script_dir, "script.js")
-            self.serve_static_file(script_file_path, "application/javascript; charset=utf-8")
-
-        elif parsed_url.path == "/favicon.ico": # 新增: 处理 favicon.ico
-            favicon_file_path = os.path.join(script_dir, "favicon.ico")
-            self.serve_static_file(favicon_file_path, "image/x-icon")
-
-        # 可以添加更多 elif 来处理其他静态文件，例如 CSS 或图片
-        # elif parsed_url.path.endswith(".css"):
-        #     file_path = os.path.join(script_dir, parsed_url.path.lstrip('/'))
-        #     self.serve_static_file(file_path, "text/css; charset=utf-8")
-
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/yaml; charset=utf-8")
+                    self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+                    self.send_header("Content-Disposition", f"inline; filename=\"chain_subscription_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.yaml\"")
+                    self.end_headers()
+                    self.wfile.write(final_yaml_string.encode("utf-8"))
+                except Exception as e:
+                    _add_log_entry(logs, "error", f"生成最终YAML时出错: {e}", e)
+                    self.send_error_response(f"服务器内部错误：无法生成YAML。详情: {e}", 500)
+            else:
+                _add_log_entry(logs, "error", "应用节点对到配置时失败。")
+                self.send_error_response(f"错误: 应用节点对失败。详情: {logs[-1]['message'] if logs else '未知错误'}", 400)
+        
+        # 静态文件服务
+        elif parsed_url.path == "/" or parsed_url.path == "/frontend.html":
+            self.serve_static_file("frontend.html", "text/html; charset=utf-8")
+        elif parsed_url.path == "/script.js":
+            self.serve_static_file("script.js", "application/javascript; charset=utf-8")
+        elif parsed_url.path == "/favicon.ico":
+            self.serve_static_file("favicon.ico", "image/x-icon")
         else:
-            # 尝试作为通用静态文件服务 (可选，但要注意安全性)
-            # 为简化，我们先只处理明确指定的文件，其他返回404
-            # 如果需要更通用的静态文件服务，需要更复杂的路径处理和安全检查
-            self.send_error_response(f"Resource not found: {self.path}", 404)
+            self.send_error_response(f"资源未找到: {self.path}", 404)
 
-    # 在 CustomHandler 类或全局定义
-    ALLOWED_EXTENSIONS = {'.html', '.js', '.css', '.ico'} # 根据你的实际需要添加
+    def serve_static_file(self, file_name, content_type):
+        """提供静态文件服务，增加了路径安全检查。"""
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        file_path = os.path.join(script_dir, file_name)
+        
+        # 安全性：规范化路径并检查是否在脚本目录下
+        normalized_script_dir = os.path.normcase(os.path.normpath(script_dir))
+        normalized_file_path = os.path.normcase(os.path.normpath(os.path.realpath(file_path)))
 
-    # 修改 serve_static_file 方法
-    def serve_static_file(self, file_path, content_type):
-        """辅助方法，用于提供静态文件服务"""
+        # 确保脚本目录路径以分隔符结尾，以便正确进行startswith检查
+        if not normalized_script_dir.endswith(os.sep):
+            normalized_script_dir += os.sep
+            
+        if not normalized_file_path.startswith(normalized_script_dir):
+            logger.warning(f"禁止访问：尝试访问脚本目录之外的文件: {file_path}")
+            self.send_error_response(f"禁止访问: {self.path}", 403)
+            return
+
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext not in self.ALLOWED_EXTENSIONS:
+            logger.warning(f"禁止访问：不允许的文件类型 {ext} 对于路径 {file_path}")
+            self.send_error_response(f"文件类型 {ext} 不允许访问", 403)
+            return
+
+        if not os.path.exists(file_path) or not os.path.isfile(file_path):
+            logger.warning(f"静态文件未找到或不是一个文件: {file_path}")
+            self.send_error_response(f"资源未找到: {self.path}", 404)
+            return
+        
         try:
-            # --- 新增扩展名检查 ---
-            ext = os.path.splitext(file_path)[1].lower()
-            # logger.info(f">>> File extension: {ext}") # <--- 添加这行
-            if ext not in self.ALLOWED_EXTENSIONS: # 引用类或全局变量
-                logger.warning(f"Attempt to access disallowed file type: {ext} for path {file_path}")
-                self.send_error_response(f"File type {ext} not allowed", 403) # Forbidden
-                return
-            # --- 扩展名检查结束 ---
-
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            normalized_script_dir = os.path.normcase(os.path.normpath(script_dir))
-            normalized_file_path = os.path.normcase(os.path.normpath(os.path.realpath(file_path)))
-
-            if not normalized_script_dir.endswith(os.sep):
-                normalized_script_dir += os.sep
-            if not normalized_file_path.startswith(normalized_script_dir):
-                logger.warning(f"Attempt to access file outside of script directory.")
-                logger.warning(f"Normalized Script Dir: {normalized_script_dir}")
-                logger.warning(f"Normalized File Path: {normalized_file_path}")
-                self.send_error_response(f"Access denied to: {self.path}", 403)
-                return
-
-            # logger.info(f">>> Checking existence for: {file_path}") # <--- 在文件检查前添加
-            if not os.path.exists(file_path) or not os.path.isfile(file_path):
-                logger.warning(f"Static file not found or is not a file: {file_path}")
-                self.send_error_response(f"Resource not found: {self.path}", 404)
-                return
-
             with open(file_path, "rb") as f:
                 content_to_serve = f.read()
-            logger.info(f"Serving static file: {file_path} as {content_type}")
+            logger.info(f"正在提供静态文件: {file_path} 类型: {content_type}")
             self.send_response(200)
             self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(content_to_serve)))
+            # 对于HTML和JS，通常也建议不缓存或积极验证缓存
+            if content_type.startswith("text/html") or content_type.startswith("application/javascript"):
+                 self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
             self.end_headers()
             self.wfile.write(content_to_serve)
-    # ... (except 块保持不变) ...
-        except FileNotFoundError:
-            logger.error(f"Static file not found (race condition or other issue): {file_path}.")
-            self.send_error_response(f"Resource not found: {self.path}", 404)
         except Exception as e:
-            logger.error(f"Error reading or serving static file {file_path}: {e}", exc_info=True)
-            self.send_error_response(f"Error serving file: {e}", 500)
-
+            logger.error(f"读取或提供静态文件 {file_path} 时发生错误: {e}", exc_info=True)
+            self.send_error_response(f"提供文件时出错: {e}", 500)
 
     def send_error_response(self, message, code=500):
+        """自定义的发送纯文本错误响应的方法。"""
+        logger.info(f"发送错误响应: code={code}, message='{message}'") # 记录所有发送的错误
         self.send_response(code)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Content-Length", str(len(message.encode('utf-8'))))
         self.end_headers()
         self.wfile.write(message.encode("utf-8"))
 
     def log_message(self, format, *args):
-        # 使用配置好的 logger 记录调试信息，而不是默认的 stderr
-        logger.debug(f"HTTP Request from {self.address_string()}: {args[0]} Status: {args[1]} Size: {args[2]}")
+        """覆盖基类的log_message，使其使用我们配置的logger。"""
+        # args 通常是 (code, size) 或 (message)
+        # format 通常是 '"%s" %s %s' % (self.requestline, str(args[0]), str(args[1]))
+        # 我们只记录一个简化的调试信息，因为详细的请求参数和处理日志已在各函数中记录
+        logger.debug(f"HTTP Request: {self.address_string()} {self.requestline} -> Status: {args[0] if args else 'N/A'}")
         return
 
+# --- 主执行 ---
 if __name__ == "__main__":
     if not os.path.exists(LOG_DIR):
         try:
             os.makedirs(LOG_DIR)
-            logger.info(f"Created log directory: {LOG_DIR}")
+            logger.info(f"已创建日志目录: {LOG_DIR}")
         except OSError as e:
-            logger.error(f"Could not create log directory {LOG_DIR}: {e}", exc_info=True)
+            logger.error(f"无法创建日志目录 {LOG_DIR}: {e}", exc_info=True)
 
-    logger.info(f"Starting server on port {PORT}...")
+    logger.info(f"正在启动服务，端口号: {PORT}...")
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    logger.info(f"Script directory: {script_dir}")
-    logger.info(f"Expected frontend.html path: {os.path.join(script_dir, 'frontend.html')}")
-    logger.info(f"Expected script.js path: {os.path.join(script_dir, 'script.js')}")
+    logger.info(f"脚本所在目录: {script_dir}")
+    logger.info(f"前端文件 frontend.html 预期路径: {os.path.join(script_dir, 'frontend.html')}")
+    logger.info(f"前端脚本 script.js 预期路径: {os.path.join(script_dir, 'script.js')}")
 
+    mimetypes.init() # 初始化mimetypes
 
-    # 初始化 mimetypes，如果需要更广泛的文件类型支持
-    mimetypes.init()
-    # 可以添加自定义的 MIME 类型，如果 mimetypes 模块不认识 .js 或其他你需要的文件
-    # mimetypes.add_type("application/javascript", ".js")
-    # mimetypes.add_type("text/css", ".css")
-
-    with ThreadingHTTPServer(("", PORT), CustomHandler) as httpd:
-        logger.info(f"Serving at http://0.0.0.0:{PORT}")
-        logger.info("--- Chain SubConverter Service Started ---")
-        logger.info(f"Access the frontend configurator at http://<your_server_ip_or_localhost>:{PORT}/")
-        try:
-            httpd.serve_forever()
-        except KeyboardInterrupt:
-            logger.info("Server is shutting down...")
-        finally:
-            httpd.server_close()
-            logger.info("Server shut down successfully.")
+    httpd = ThreadingHTTPServer(("", PORT), CustomHandler)
+    logger.info(f"服务已启动于 http://0.0.0.0:{PORT}")
+    logger.info("--- Mihomo 链式订阅转换服务已就绪 ---")
+    logger.info(f"请通过 http://<您的服务器IP或localhost>:{PORT}/ 访问前端配置页面")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        logger.info("服务正在关闭...")
+    finally:
+        httpd.server_close()
+        logger.info("服务已成功关闭。")

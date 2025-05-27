@@ -1,79 +1,103 @@
-const MAX_MANUAL_PAIRS = 6;
-let actionButtons; // To store Copy, Open, Download buttons
+// script.js
 
+const MAX_MANUAL_PAIRS = 10; // 可以适当增加手动配对的上限
+let actionButtons; 
 let feedbackHistory = [];
-const MAX_LOG_ENTRIES = 100; // 可选：限制日志条目数量
-let logContainer; // 在 DOMContentLoaded 中初始化
-let toggleLogButton; // 在 DOMContentLoaded 中初始化
+const MAX_LOG_ENTRIES = 100; 
+let logContainer; 
+let toggleLogButton;
+
+// 新增：获取服务根地址的辅助函数
+function getServiceUrl() {
+    const serviceUrlInput = document.getElementById('serviceUrl');
+    const customizeServiceUrlCheckbox = document.getElementById('customizeServiceUrlSwitchInput');
+    let finalServiceUrl = serviceUrlInput.value.trim().replace(/\/$/, '');
+
+    if (customizeServiceUrlCheckbox && customizeServiceUrlCheckbox.checked && !finalServiceUrl) {
+         showFeedback('错误：请输入自定义的服务根地址。', 'error', 5000);
+         if(serviceUrlInput) serviceUrlInput.focus();
+         return null;
+    }
+    if(customizeServiceUrlCheckbox && !customizeServiceUrlCheckbox.checked){
+        try { // 确保在非自定义模式下，URL是最新的自动检测值
+            const currentOrigin = window.location.origin;
+            if (window.location.protocol.startsWith('http') && currentOrigin &&
+                !currentOrigin.includes('localhost') && !currentOrigin.includes('127.0.0.1')) {
+                finalServiceUrl = currentOrigin;
+            } else { finalServiceUrl = 'http://localhost:11200'; } // 与后端默认端口一致
+        } catch(e){ finalServiceUrl = 'http://localhost:11200'; }
+        if(serviceUrlInput) serviceUrlInput.value = finalServiceUrl;
+    }
+    return finalServiceUrl;
+}
+
 
 document.addEventListener('DOMContentLoaded', function() {
     const serviceUrlInput = document.getElementById('serviceUrl');
     const customizeServiceUrlCheckbox = document.getElementById('customizeServiceUrlSwitchInput');
-    const configModeSwitchInput = document.getElementById('configModeSwitchInput');
+    // const configModeSwitchInput = document.getElementById('configModeSwitchInput'); // 已移除
     const generateLinkButton = document.getElementById('generateLinkButton');
     const copyUrlButton = document.getElementById('copyUrlButton');
     const openUrlButton = document.getElementById('openUrlButton');
     const downloadConfigButton = document.getElementById('downloadConfigButton');
+    const autoDetectButton = document.getElementById('autoDetectButton'); // 新增按钮
 
     logContainer = document.getElementById('logContainer');
     toggleLogButton = document.getElementById('toggleLogButton');
 
-    // Auto-fill service URL and set its initial disabled state
+    // 服务URL初始化
     try {
         const currentOrigin = window.location.origin;
         if (window.location.protocol.startsWith('http') && currentOrigin &&
             !currentOrigin.includes('localhost') && !currentOrigin.includes('127.0.0.1')) {
             serviceUrlInput.value = currentOrigin;
         } else {
-            serviceUrlInput.value = 'http://localhost:11200'; // Default if not auto-filled
+            serviceUrlInput.value = 'http://localhost:11200';
         }
     } catch (e) {
-        console.warn("Could not auto-fill service URL:", e);
-        serviceUrlInput.value = 'http://localhost:11200'; // Ensure a default if error occurs
+        console.warn("无法自动填充服务URL:", e);
+        serviceUrlInput.value = 'http://localhost:11200';
     }
-    if (serviceUrlInput) serviceUrlInput.disabled = true; // Initially disabled as per default checkbox state
-    if (customizeServiceUrlCheckbox) customizeServiceUrlCheckbox.checked = false; // Default to not customizing
-
-
-    if(configModeSwitchInput) configModeSwitchInput.checked = false; // Default to Manual Mode
+    if (serviceUrlInput) serviceUrlInput.disabled = true;
+    if (customizeServiceUrlCheckbox) customizeServiceUrlCheckbox.checked = false;
 
     actionButtons = [copyUrlButton, openUrlButton, downloadConfigButton];
     actionButtons.forEach(btn => { if(btn) btn.disabled = true; });
     if(document.getElementById('generatedUrl')) document.getElementById('generatedUrl').value = '';
 
-    // Add event listeners for existing elements
-    if (configModeSwitchInput) {
-        configModeSwitchInput.addEventListener('change', toggleConfigMode);
-    }
+    // 移除 configModeSwitchInput 的事件监听器
+    // if (configModeSwitchInput) {
+    //     configModeSwitchInput.addEventListener('change', toggleConfigMode);
+    // }
+
     if (customizeServiceUrlCheckbox) {
         customizeServiceUrlCheckbox.addEventListener('change', toggleServiceUrlInput);
     }
-    if (generateLinkButton) {
-        generateLinkButton.addEventListener('click', generateAndValidateUrl);
+    if (generateLinkButton) { // "生成"按钮现在调用 validateConfigurationAndGenerateUrl
+        generateLinkButton.addEventListener('click', validateConfigurationAndGenerateUrl);
+    }
+    if (autoDetectButton) { // 新增按钮的事件监听
+        autoDetectButton.addEventListener('click', handleAutoDetectPairs);
     }
     if (copyUrlButton) {
         copyUrlButton.addEventListener('click', copyUrl);
     }
-    if (openUrlButton) {
-        openUrlButton.addEventListener('click', openUrl);
+    if (openUrlButton) { // 修改 "打开" 按钮的逻辑
+        openUrlButton.addEventListener('click', precheckAndOpenUrl);
     }
-    if (downloadConfigButton) {
+    if (downloadConfigButton) { // "下载" 按钮逻辑也可能需要微调以处理错误
         downloadConfigButton.addEventListener('click', downloadConfig);
     }
 
-    // 在 DOMContentLoaded 的 toggleLogButton 事件监听器中
     if (toggleLogButton && logContainer) {
         toggleLogButton.addEventListener('click', function() {
             const isCurrentlyHidden = logContainer.classList.contains('hidden');
-
-            if (isCurrentlyHidden) { // 即将显示
+            if (isCurrentlyHidden) {
                 logContainer.classList.remove('hidden');
                 toggleLogButton.textContent = '▼'; 
                 toggleLogButton.title = '隐藏详细日志';
-                // 当日志容器内容很多时，可以考虑将其滚动到底部以便用户看到最新日志
-                // logContainer.scrollTop = logContainer.scrollHeight; 
-                // 这一行是可选的，如果日志条目很多，展开后自动滚到底部可能比较友好
-            } else { // 即将隐藏
+                logContainer.scrollTop = logContainer.scrollHeight;
+            } else {
                 logContainer.classList.add('hidden');
                 toggleLogButton.textContent = '▶'; 
                 toggleLogButton.title = '显示详细日志';
@@ -81,10 +105,12 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    renderManualPairRows();
-    toggleConfigMode(); // Apply initial state for manual pairs section
+    renderManualPairRows(); // 初始化时渲染一次，确保至少有一行（如果为空）
+    // toggleConfigMode(); // 已移除，节点对输入区域始终可见且可用
+    updateManualPairControlsState(); // 确保控件状态正确
 });
 
+// --- 节点对行管理 (基本保持不变, 移除isAutoMode相关的禁用逻辑) ---
 function createManualPairRowElement(index, landingValue = '', frontValue = '') {
     const newRow = document.createElement('div');
     newRow.className = 'manual-pair-dynamic-row';
@@ -92,16 +118,15 @@ function createManualPairRowElement(index, landingValue = '', frontValue = '') {
     const landingInput = document.createElement('input');
     landingInput.type = 'text';
     landingInput.className = 'landing-proxy-input';
-    landingInput.placeholder = '落地节点名称';
+    landingInput.placeholder = '落地节点名称 (必填)';
     landingInput.value = landingValue;
 
     const frontInput = document.createElement('input');
     frontInput.type = 'text';
     frontInput.className = 'front-proxy-input';
-    frontInput.placeholder = '前置节点/组名称';
+    frontInput.placeholder = '前置节点/组名称 (必填)';
     frontInput.value = frontValue;
 
-    // SVG 图标定义
     const addIconSvg = '<svg viewBox="0 0 24 24" fill="currentColor" style="width:1em;height:1em;display:block;margin:auto;"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>';
     const removeIconSvg = '<svg viewBox="0 0 24 24" fill="currentColor" style="width:1em;height:1em;display:block;margin:auto;"><path d="M19 13H5v-2h14v2z"/></svg>';
 
@@ -118,38 +143,33 @@ function createManualPairRowElement(index, landingValue = '', frontValue = '') {
     newRow.querySelectorAll('.input-cell')[0].appendChild(landingInput);
     newRow.querySelectorAll('.input-cell')[1].appendChild(frontInput);
 
-    // Add event listeners for dynamically created buttons
-    const addButton = newRow.querySelector('.action-button-inline.add');
-    const removeButton = newRow.querySelector('.action-button-inline.remove');
-
-    if (addButton) {
-        addButton.addEventListener('click', function() {
-            addManualPairRow(newRow); // Pass the row itself
-        });
-    }
-    if (removeButton) {
-        removeButton.addEventListener('click', function() {
-            removeManualPairRow(newRow); // Pass the row itself
-        });
-    }
+    newRow.querySelector('.action-button-inline.add').addEventListener('click', function() { addManualPairRow(newRow); });
+    newRow.querySelector('.action-button-inline.remove').addEventListener('click', function() { removeManualPairRow(newRow); });
+    
     return newRow;
 }
 
-function renderManualPairRows() {
+function renderManualPairRows(initialPairsData = null) {
     const container = document.getElementById('manualPairsInputsContainer');
     if (!container) return;
-    container.innerHTML = '';
+    container.innerHTML = ''; // 清空现有行
 
-    let rowsData = getManualPairDataFromDOM(); // This might be empty initially or based on previous state if persisted
-    const configModeSwitch = document.getElementById('configModeSwitchInput');
-    // If manual mode is active and no rows exist (e.g., on first load or after clearing all), add one default row.
-    if (configModeSwitch && !configModeSwitch.checked && rowsData.length === 0) {
-         rowsData = [{ landing: '', front: '' }];
+    let rowsData = initialPairsData; // 使用传入的数据，否则从DOM或默认值获取
+
+    if (!rowsData) { // 如果没有传入数据，则尝试从DOM获取（例如页面刷新保留）或创建默认空行
+        rowsData = getManualPairDataFromDOM();
+        if (rowsData.length === 0) {
+             rowsData = [{ landing: '', front: '' }]; // 默认至少显示一行空行
+        }
+    } else if (rowsData.length === 0) { // 如果传入空数组，也确保至少有一行
+        rowsData = [{ landing: '', front: '' }];
     }
 
 
     rowsData.forEach((data, index) => {
-        container.appendChild(createManualPairRowElement(index, data.landing, data.front));
+        // data 可能来自 suggested_pairs ({"landing": ..., "front": ...})
+        // 或来自 getManualPairDataFromDOM ({"landing": ..., "front": ...})
+        container.appendChild(createManualPairRowElement(index, data.landing || '', data.front || ''));
     });
     updateManualPairControlsState();
 }
@@ -160,6 +180,8 @@ function getManualPairDataFromDOM() {
     rows.forEach(row => {
         const landingInput = row.querySelector('.landing-proxy-input');
         const frontInput = row.querySelector('.front-proxy-input');
+        // 只添加有效填写的行到数据中，或者也收集空行用于判断？
+        // 现在的做法是收集所有行，由调用者判断是否有效。
         data.push({
             landing: landingInput ? landingInput.value.trim() : '',
             front: frontInput ? frontInput.value.trim() : ''
@@ -168,33 +190,19 @@ function getManualPairDataFromDOM() {
     return data;
 }
 
-function addManualPairRow(callingRowElement) { // callingRowElement is the row before which new row is added or null
+function addManualPairRow(callingRowElement) {
     const container = document.getElementById('manualPairsInputsContainer');
     if (!container) return;
     const currentRows = container.querySelectorAll('.manual-pair-dynamic-row');
 
     if (currentRows.length >= MAX_MANUAL_PAIRS) {
-        showFeedback(`最多只能添加 ${MAX_MANUAL_PAIRS} 对手动节点。`, 'info');
+        showFeedback(`最多只能添加 ${MAX_MANUAL_PAIRS} 对手动节点。`, 'info', 3000);
         return;
     }
-
-    // The index for the new row will be based on the position of callingRowElement or at the end
-    let newIndex = currentRows.length;
-    if (callingRowElement) {
-        // Find the index of callingRowElement to insert after it
-        const callingRowIndex = Array.from(currentRows).indexOf(callingRowElement);
-        if (callingRowIndex !== -1) {
-            newIndex = callingRowIndex + 1;
-        }
-    }
-
-    const newRow = createManualPairRowElement(newIndex); // Index passed for numbering, actual renumbering done after insertion
-
+    const newRow = createManualPairRowElement(currentRows.length); // 初始索引，会被 renumber 更新
     if (callingRowElement && callingRowElement.parentNode === container) {
-        // Insert the new row after the callingRowElement
         callingRowElement.after(newRow);
     } else {
-        // Append to the end if callingRowElement is not specified or not in container
         container.appendChild(newRow);
     }
     renumberRowsInDOM();
@@ -204,37 +212,20 @@ function addManualPairRow(callingRowElement) { // callingRowElement is the row b
 function removeManualPairRow(rowElementToRemove) {
     const container = document.getElementById('manualPairsInputsContainer');
     if (!container || !rowElementToRemove) return;
-    const rows = container.querySelectorAll('.manual-pair-dynamic-row');
-    const configModeSwitch = document.getElementById('configModeSwitchInput');
-
-    // In manual mode, if it's the last row, clear its inputs instead of removing,
-    // unless the row is already empty.
-    if (rows.length <= 1 && configModeSwitch && !configModeSwitch.checked) {
+    
+    const currentRows = container.querySelectorAll('.manual-pair-dynamic-row');
+    if (currentRows.length <= 1) { // 始终保留至少一行
+        showFeedback('至少需要保留一行配置。请直接清空内容。', 'info', 3000);
         const landingInput = rowElementToRemove.querySelector('.landing-proxy-input');
         const frontInput = rowElementToRemove.querySelector('.front-proxy-input');
-        if (landingInput && frontInput && (landingInput.value.trim() !== '' || frontInput.value.trim() !== '')) {
-            showFeedback('至少需要保留一对节点配置。清空内容即可。', 'info');
-            if (landingInput) landingInput.value = '';
-            if (frontInput) frontInput.value = '';
-            return; // Don't remove, just cleared.
-        } else if (rows.length === 1) {
-             // If it's the only row and it's already empty, still don't remove it in manual mode.
-             // The user can choose to fill it or switch to auto.
-             showFeedback('至少需要保留一对节点配置。清空内容即可。', 'info');
-             return;
-        }
+        if(landingInput) landingInput.value = '';
+        if(frontInput) frontInput.value = '';
+        return;
     }
 
     rowElementToRemove.remove();
     renumberRowsInDOM();
     updateManualPairControlsState();
-
-    // If manual mode is active and all rows were removed (which shouldn't happen if the above logic is strict)
-    // or if we switch to manual mode and there are no rows, ensure one is present.
-    const remainingRows = container.querySelectorAll('.manual-pair-dynamic-row');
-    if (configModeSwitch && !configModeSwitch.checked && remainingRows.length === 0) {
-        renderManualPairRows(); // This will add a default row
-    }
 }
 
 function renumberRowsInDOM() {
@@ -245,50 +236,30 @@ function renumberRowsInDOM() {
     });
 }
 
-function updateManualPairControlsState() {
+function updateManualPairControlsState() { // 移除了 isAutoMode 的影响
     const rows = document.querySelectorAll('#manualPairsInputsContainer .manual-pair-dynamic-row');
-    const configModeSwitch = document.getElementById('configModeSwitchInput');
-    const isAutoMode = configModeSwitch ? configModeSwitch.checked : false;
-
-    rows.forEach((row, index) => {
+    rows.forEach((row) => { // index不再需要
         const inputs = row.querySelectorAll('input[type="text"]');
         const addButton = row.querySelector('.action-button-inline.add');
         const removeButton = row.querySelector('.action-button-inline.remove');
 
-        inputs.forEach(input => input.disabled = isAutoMode);
+        inputs.forEach(input => input.disabled = false); // 输入框始终启用
         if (addButton) {
-            addButton.disabled = isAutoMode || (rows.length >= MAX_MANUAL_PAIRS);
+            addButton.disabled = (rows.length >= MAX_MANUAL_PAIRS);
         }
         if (removeButton) {
-            // In manual mode, disable remove if it's the only row.
-            removeButton.disabled = isAutoMode || (rows.length <= 1 && !isAutoMode);
+            removeButton.disabled = (rows.length <= 1); // 如果是最后一行，则禁用删除
         }
     });
+
     const container = document.getElementById('manualPairsInputsContainer');
-    // Ensure there's always at least one row in manual mode if the container is visible/active
-    if (!isAutoMode && container && rows.length === 0 && container.children.length === 0) {
-         renderManualPairRows(); // Will add one default row
+    if (container && rows.length === 0 && container.children.length === 0) { // 确保至少有一行
+         renderManualPairRows(); 
     }
 }
 
-function toggleConfigMode() {
-    const configModeSwitch = document.getElementById('configModeSwitchInput');
-    const autoModeText = document.getElementById('autoModeText');
-    const manualModeText = document.getElementById('manualModeText');
-    const isAutoMode = configModeSwitch ? configModeSwitch.checked : false;
-
-    // Call this first to enable/disable inputs BEFORE checking row counts
-    updateManualPairControlsState();
-
-    if (autoModeText) autoModeText.classList.toggle('hidden', !isAutoMode);
-    if (manualModeText) manualModeText.classList.toggle('hidden', isAutoMode);
-
-    const container = document.getElementById('manualPairsInputsContainer');
-    // If switching to manual mode and there are no rows, render the initial row(s).
-    if (!isAutoMode && container && container.querySelectorAll('.manual-pair-dynamic-row').length === 0) {
-        renderManualPairRows(); // This will add a default row if logic inside allows
-    }
-}
+// toggleConfigMode 函数已不再需要，可以删除
+// function toggleConfigMode() { ... }
 
 function toggleServiceUrlInput() {
     const customizeCheckbox = document.getElementById('customizeServiceUrlSwitchInput');
@@ -299,7 +270,6 @@ function toggleServiceUrlInput() {
     if (customizeCheckbox.checked) {
         serviceUrlInput.focus();
     } else {
-        // Revert to auto-detected URL if customize is unchecked
         try {
             const currentOrigin = window.location.origin;
             if (window.location.protocol.startsWith('http') && currentOrigin &&
@@ -310,76 +280,55 @@ function toggleServiceUrlInput() {
     }
 }
 
-// script.js
-function validateInputs() {
+function validateInputs() { // 只校验 remoteUrl
     const remoteUrlInput = document.getElementById('remoteUrl');
-    const remoteUrlError = document.getElementById('remoteUrlError'); // 保持对内联错误元素的引用
-    const generateLinkButton = document.getElementById('generateLinkButton'); // 获取生成按钮
-
     if (!remoteUrlInput || !remoteUrlInput.value.trim()) {
         const errorMessage = '请输入有效的原始订阅链接。';
-        
-        // 1. 使用 showFeedback 显示主要错误信息
         showFeedback(errorMessage, 'error', 5000); 
-
-        if(remoteUrlInput) remoteUrlInput.focus(); // 将焦点移到输入框
-
-        // 考虑到 generateAndValidateUrl 中会禁用生成按钮，如果校验失败应确保按钮状态正确
-        // 但通常 validateInputs 是在 generateAndValidateUrl 内部调用的，
-        // generateAndValidateUrl 会处理按钮的启用/禁用。
-        // 此处主要返回 false，由调用者处理后续。
+        if(remoteUrlInput) remoteUrlInput.focus();
         return false;
     }
-
-    // 如果输入有效，隐藏内联错误提示
-    if (remoteUrlError) remoteUrlError.classList.add('hidden');
     return true;
 }
 
+// --- 日志和反馈 (基本保持不变) ---
 function showFeedback(message, type = 'info', duration = 0) {
     const feedbackElement = document.getElementById('feedbackMessage');
     if (!feedbackElement) return;
 
-    // 1. 更新主反馈行 (现有逻辑)
     feedbackElement.textContent = message;
-    feedbackElement.className = 'feedback-message'; // Reset classes
+    feedbackElement.className = 'feedback-message';
     feedbackElement.classList.add(`feedback-${type}`);
 
-    if (feedbackElement.timeoutId) {
-        clearTimeout(feedbackElement.timeoutId);
-    }
+    if (feedbackElement.timeoutId) clearTimeout(feedbackElement.timeoutId);
 
-    if (type === 'info' && message === '等待操作...') {
-        // 对于默认的 "等待操作..." 消息，不自动添加到详细日志，也不设置超时隐藏
-    } else {
-        // 2. 添加到历史记录并更新日志容器
+    const isDefaultMessage = type === 'info' && message === '等待操作...';
+    
+    // 将所有非默认的、或不是纯粹由后端日志填充的消息（如果做了区分）加入历史
+    // 简单起见，所有showFeedback调用的主消息都加入历史，除了初始的"等待操作"
+    if (!isDefaultMessage) {
         const timestamp = new Date();
-        // 使用 toLocaleTimeString() 或 toLocaleString() 来获得更易读的时间格式
         const formattedTimestamp = `${timestamp.getHours().toString().padStart(2, '0')}:${timestamp.getMinutes().toString().padStart(2, '0')}:${timestamp.getSeconds().toString().padStart(2, '0')}`;
-
         feedbackHistory.push({ timestamp: formattedTimestamp, type: type, message: message });
         if (feedbackHistory.length > MAX_LOG_ENTRIES) {
-            feedbackHistory.shift(); // 移除最旧的条目
+            feedbackHistory.shift(); 
         }
-        renderLogs(); // 调用新函数来渲染日志
-        // console.log("Calling renderLogs() from showFeedback. Message:", message);
+        renderLogs(); 
+    }
 
-        // 3. 设置超时以恢复默认消息 (仅当 duration > 0)
-        if (duration > 0) {
-            feedbackElement.timeoutId = setTimeout(() => {
-                if (feedbackElement.textContent === message) {
-                    feedbackElement.textContent = '等待操作...';
-                    feedbackElement.className = 'feedback-message feedback-info';
-                }
-            }, duration);
-        }
+    if (duration > 0 && !isDefaultMessage) {
+        feedbackElement.timeoutId = setTimeout(() => {
+            if (feedbackElement.textContent === message) {
+                feedbackElement.textContent = '等待操作...';
+                feedbackElement.className = 'feedback-message feedback-info';
+            }
+        }, duration);
     }
 }
 
 function renderLogs() {
     if (!logContainer) return;
-
-    logContainer.innerHTML = ''; // 清空现有日志
+    logContainer.innerHTML = ''; 
 
     if (feedbackHistory.length === 0) {
         const noLogsEntry = document.createElement('p');
@@ -398,183 +347,227 @@ function renderLogs() {
         const timestampSpan = document.createElement('span');
         timestampSpan.textContent = `[${logEntry.timestamp}] `;
         timestampSpan.style.fontWeight = 'bold';
-        timestampSpan.style.color = logEntry.type === 'error' ? '#dc3545' : (logEntry.type === 'success' ? '#28a745' : '#007bff'); // 根据类型上色
+        const typeToColor = { 'error': '#dc3545', 'success': '#28a745', 'warn': '#ffc107', 'info': '#007bff', 'debug': '#6c757d'};
+        timestampSpan.style.color = typeToColor[logEntry.type] || typeToColor['debug'];
 
         const messageSpan = document.createElement('span');
         messageSpan.textContent = logEntry.message;
-        if (logEntry.type === 'error') messageSpan.style.color = '#dc3545';
+        if (logEntry.type === 'error') messageSpan.style.color = typeToColor['error'];
+        // 可以为其他类型也设置特定颜色，如果需要
 
         logElement.appendChild(timestampSpan);
         logElement.appendChild(messageSpan);
         logContainer.appendChild(logElement);
     });
 
-    // 可选：如果日志区域可见，则滚动到底部
     if (!logContainer.classList.contains('hidden')) {
         logContainer.scrollTop = logContainer.scrollHeight;
     }
 }
 
-function generateUrlLogic() {
-    if (!validateInputs()) return null;
+// --- 新增：自动识别节点对的处理函数 ---
+async function handleAutoDetectPairs() {
+    if (!validateInputs()) return; // 校验原始订阅链接
 
-    const serviceUrlInput = document.getElementById('serviceUrl');
     const remoteUrlInput = document.getElementById('remoteUrl');
-    const configModeSwitch = document.getElementById('configModeSwitchInput');
-    const customizeServiceUrlCheckbox = document.getElementById('customizeServiceUrlSwitchInput');
-
-    let finalServiceUrl = serviceUrlInput.value.trim().replace(/\/$/, '');
-
-    if (customizeServiceUrlCheckbox && customizeServiceUrlCheckbox.checked && !finalServiceUrl) {
-         showFeedback('错误：请输入自定义的服务根地址。', 'error', 5000);
-         if(serviceUrlInput) serviceUrlInput.focus();
-         return null;
-    }
-    // If not customizing, the value should already be set by toggleServiceUrlInput or initial load.
-    // But ensure it's correctly reflecting non-customized state if generate is hit directly.
-    if(customizeServiceUrlCheckbox && !customizeServiceUrlCheckbox.checked){
-        try {
-            const currentOrigin = window.location.origin;
-            if (window.location.protocol.startsWith('http') && currentOrigin &&
-                !currentOrigin.includes('localhost') && !currentOrigin.includes('127.0.0.1')) {
-                finalServiceUrl = currentOrigin;
-            } else { finalServiceUrl = 'http://localhost:11200'; }
-        } catch(e){ finalServiceUrl = 'http://localhost:11200'; }
-        if(serviceUrlInput) serviceUrlInput.value = finalServiceUrl; // Reflect the URL being used
-    }
-
-
     const remoteUrl = remoteUrlInput.value.trim();
-    const isAutoMode = (configModeSwitch && configModeSwitch.checked);
-    const manualDialerEnabledValue = isAutoMode ? '0' : '1';
+    const serviceUrl = getServiceUrl();
+    if (!serviceUrl) return;
 
-    let manualPairsArray = [];
-    if (!isAutoMode) { // Manual mode
-        const rows = document.querySelectorAll('#manualPairsInputsContainer .manual-pair-dynamic-row');
-        let hasIncompletePair = false;
-        let hasAtLeastOneCompletePair = false;
+    showFeedback('正在自动识别节点对...', 'info', 0);
+    actionButtons.forEach(btn => { if(btn) btn.disabled = true; });
+    document.getElementById('generateLinkButton').disabled = true; // 禁用生成按钮
+    document.getElementById('autoDetectButton').disabled = true;  // 禁用自身
 
-        if (rows.length === 0) { // Should not happen if UI logic is correct for manual mode
-            showFeedback('手动配置模式下，请至少填写一对有效的节点。', 'error', 5000); return null;
-        }
+    try {
+        const apiEndpoint = `${serviceUrl}/api/auto_detect_pairs?remote_url=${encodeURIComponent(remoteUrl)}`;
+        const response = await fetch(apiEndpoint);
+        const responseData = await response.json();
 
-        rows.forEach(row => {
-            const landingInput = row.querySelector('.landing-proxy-input');
-            const frontInput = row.querySelector('.front-proxy-input');
-            if (landingInput && frontInput) {
-                const landingValue = landingInput.value.trim();
-                const frontValue = frontInput.value.trim();
-                if (landingValue && frontValue) {
-                    manualPairsArray.push(landingValue + ":" + frontValue);
-                    hasAtLeastOneCompletePair = true;
-                } else if (landingValue || frontValue) { // One is filled, the other is not
-                    hasIncompletePair = true;
-                }
+        // 处理后端日志
+        if (responseData.logs && Array.isArray(responseData.logs)) {
+            responseData.logs.forEach(log => {
+                const fTimestamp = log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+                feedbackHistory.push({
+                    timestamp: fTimestamp,
+                    type: log.level ? log.level.toLowerCase() : 'debug',
+                    message: log.message
+                });
+            });
+            if (feedbackHistory.length > MAX_LOG_ENTRIES) {
+                 feedbackHistory.splice(0, feedbackHistory.length - MAX_LOG_ENTRIES);
             }
-        });
-
-        if (hasIncompletePair) {
-            showFeedback('手动配置中存在未完整填写的节点对，请检查。', 'error', 5000); return null;
+            renderLogs(); // 更新日志显示
         }
-        if (!hasAtLeastOneCompletePair) { // No complete pairs, and no incomplete pairs (i.e., all rows are empty)
-            showFeedback('手动配置模式下，请至少填写一对有效的节点。', 'error', 5000); return null;
-        }
-    }
-    const manualPairsString = manualPairsArray.join(',');
 
-    let targetUrl = finalServiceUrl + '/subscription.yaml?';
-    targetUrl += 'remote_url=' + encodeURIComponent(remoteUrl);
-    targetUrl += '&manual_dialer_enabled=' + manualDialerEnabledValue;
-    if (manualDialerEnabledValue === '1' && manualPairsString) { // Only add manual_pairs if in manual mode and string is not empty
-        targetUrl += '&manual_pairs=' + encodeURIComponent(manualPairsString);
+        showFeedback(responseData.message || '自动识别完成。', responseData.success ? 'success' : 'error', 5000);
+
+        if (responseData.success && responseData.suggested_pairs) {
+            // 使用识别到的节点对填充输入框
+            populatePairRows(responseData.suggested_pairs);
+        } else if (!responseData.success) {
+            // 如果识别失败，但之前有手动填写的行，保留它们，或者清空？当前选择保留。
+            // 可以考虑如果suggested_pairs为空但也success，则清空或加一个空行
+            if (!responseData.suggested_pairs || responseData.suggested_pairs.length === 0) {
+                // renderManualPairRows(); // 确保至少有一行，如果需要清空的话
+            }
+        }
+
+    } catch (error) {
+        showFeedback(`自动识别请求失败: ${error.message}`, 'error', 7000);
+        console.error('自动识别请求失败:', error);
+        renderLogs(); // 即使出错，也刷新日志 (可能包含旧日志和新错误)
+    } finally {
+        document.getElementById('generateLinkButton').disabled = false;
+        document.getElementById('autoDetectButton').disabled = false;
     }
-    return targetUrl;
 }
 
-async function generateAndValidateUrl() {
-    showFeedback('正在生成和验证链接...', 'info', 0);
+function populatePairRows(pairsData) {
+    const container = document.getElementById('manualPairsInputsContainer');
+    if (!container) return;
+    container.innerHTML = ''; // 清空现有行
+
+    if (!pairsData || pairsData.length === 0) {
+        showFeedback('未自动识别到任何节点对，或识别结果为空。请检查订阅内容或手动添加。', 'info', 4000);
+        renderManualPairRows(); // 渲染一个空的默认行
+        return;
+    }
+
+    pairsData.forEach((pair, index) => {
+        if (container.children.length < MAX_MANUAL_PAIRS) {
+            container.appendChild(createManualPairRowElement(index, pair.landing, pair.front));
+        } else if (index === MAX_MANUAL_PAIRS) { // 只提示一次
+             showFeedback(`自动识别到超过 ${MAX_MANUAL_PAIRS} 对节点，仅显示前 ${MAX_MANUAL_PAIRS} 对。`, 'warn', 5000);
+        }
+    });
+    renumberRowsInDOM();
+    updateManualPairControlsState();
+}
+
+
+// --- 修改后的 "生成" 按钮逻辑 ---
+function convertPairsToQueryString(pairsList) {
+    // pairsList 是 [{landing: "L1", front: "F1"}, ...]
+    // 需要转换为 "L1:F1,L2:F2"
+    if (!pairsList || pairsList.length === 0) return "";
+    return pairsList
+        .filter(p => p.landing && p.front) // 只包含有效填写的对
+        .map(p => `${p.landing.trim()}:${p.front.trim()}`)
+        .join(',');
+}
+
+async function validateConfigurationAndGenerateUrl() {
+    showFeedback('正在验证配置并生成链接...', 'info', 0);
     const generateBtn = document.getElementById('generateLinkButton');
+    const autoDetectBtn = document.getElementById('autoDetectButton');
     if(generateBtn) generateBtn.disabled = true;
+    if(autoDetectBtn) autoDetectBtn.disabled = true;
+
 
     const generatedUrlInput = document.getElementById('generatedUrl');
     actionButtons.forEach(btn => { if(btn) btn.disabled = true; });
-    if(generatedUrlInput) generatedUrlInput.value = ''; // 无论如何，操作前先清空
+    if(generatedUrlInput) generatedUrlInput.value = '';
 
-    const url = generateUrlLogic();
-
-    if (!url) {
+    if (!validateInputs()) { // 只校验原始订阅链接是否填写
         if(generateBtn) generateBtn.disabled = false;
-        // feedbackMessage 已在 generateUrlLogic 或 validateInputs 中设置
-        // (确保有个默认的恢复，如果其他地方没有设置错误信息的话)
-        const feedbackElement = document.getElementById('feedbackMessage');
-         if (feedbackElement && !feedbackElement.className.includes('error') && !feedbackElement.className.includes('success')) {
-             showFeedback('等待操作...', 'info'); // 以防万一，恢复默认提示
-        }
-        // generatedUrlInput 已在前面清空
+        if(autoDetectBtn) autoDetectBtn.disabled = false;
         return;
     }
 
-    // 尝试填充URL，但如果验证失败，它将被再次清空
-    if(generatedUrlInput) generatedUrlInput.value = url;
+    const remoteUrlInput = document.getElementById('remoteUrl');
+    const remoteUrl = remoteUrlInput.value.trim();
+    const serviceUrl = getServiceUrl();
+    if (!serviceUrl) {
+        if(generateBtn) generateBtn.disabled = false;
+        if(autoDetectBtn) autoDetectBtn.disabled = false;
+        return;
+    }
+
+    const nodePairsFromDOM = getManualPairDataFromDOM();
+    // 过滤掉 landing 和 front 都为空的无效行，但如果用户就是想提交空节点对（理论上不应该）
+    const validNodePairs = nodePairsFromDOM.filter(p => p.landing.trim() || p.front.trim());
+    
+    // 如果存在节点对行，但有不完整的对（一个填了另一个没填），则报错
+    let hasIncompletePair = false;
+    if (validNodePairs.length > 0) {
+        hasIncompletePair = validNodePairs.some(p => (p.landing.trim() && !p.front.trim()) || (!p.landing.trim() && p.front.trim()));
+    }
+
+    if (hasIncompletePair) {
+        showFeedback('节点对配置中存在未完整填写的行，请检查。', 'error', 5000);
+        if(generateBtn) generateBtn.disabled = false;
+        if(autoDetectBtn) autoDetectBtn.disabled = false;
+        return;
+    }
+    
+    // 实际发送给后端的节点对列表 (只包含 landing 和 front 都有值的)
+    const nodePairsToSend = validNodePairs.filter(p => p.landing.trim() && p.front.trim());
+
 
     try {
-        const response = await fetch(url);
+        const apiEndpoint = `${serviceUrl}/api/validate_configuration`;
+        const response = await fetch(apiEndpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                remote_url: remoteUrl,
+                node_pairs: nodePairsToSend // 发送[{landing:"", front:""},...]格式
+            })
+        });
+        const responseData = await response.json();
 
-        if (!response.ok) {
-            const errorTextFromServer = await response.text();
-            showFeedback(`链接验证失败 (HTTP ${response.status}): ${errorTextFromServer.substring(0,100)}`, 'error', 7000);
-            actionButtons.forEach(btn => { if(btn) btn.disabled = true; });
-            if(generatedUrlInput) generatedUrlInput.value = ''; // 验证失败，清空URL输入框
-        } else {
-            const contentType = response.headers.get("content-type");
-            if (contentType && (contentType.toLowerCase().includes("yaml") || contentType.toLowerCase().includes("text/plain"))) {
-                showFeedback('链接已生成并验证成功！', 'success', 5000);
-                actionButtons.forEach(btn => { if(btn) btn.disabled = false; });
-                // 此时 generatedUrlInput.value = url; 是有效的，保留
-            } else if (contentType) {
-                showFeedback(`链接已生成，但响应类型 (${contentType}) 非预期YAML。仍可尝试操作。`, 'info', 7000);
-                actionButtons.forEach(btn => { if(btn) btn.disabled = false; });
-            } else {
-                 showFeedback(`链接已生成，但响应类型未知。请谨慎操作。`, 'info', 7000);
-                 actionButtons.forEach(btn => { if(btn) btn.disabled = false; });
+        if (responseData.logs && Array.isArray(responseData.logs)) {
+            responseData.logs.forEach(log => {
+                const fTimestamp = log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+                feedbackHistory.push({ timestamp: fTimestamp, type: log.level ? log.level.toLowerCase() : 'debug', message: log.message });
+            });
+            if (feedbackHistory.length > MAX_LOG_ENTRIES) {
+                 feedbackHistory.splice(0, feedbackHistory.length - MAX_LOG_ENTRIES);
             }
+            renderLogs();
         }
+
+        showFeedback(responseData.message || '验证完成。', responseData.success ? 'success' : 'error', 7000);
+
+        if (responseData.success) {
+            // 验证成功，前端组装 /subscription.yaml 的链接
+            let subscriptionUrl = `${serviceUrl}/subscription.yaml?remote_url=${encodeURIComponent(remoteUrl)}`;
+            if (nodePairsToSend.length > 0) {
+                const pairsQueryString = convertPairsToQueryString(nodePairsToSend); // 转换为 L1:F1,L2:F2 格式
+                subscriptionUrl += `&manual_pairs=${encodeURIComponent(pairsQueryString)}`;
+            }
+            if(generatedUrlInput) generatedUrlInput.value = subscriptionUrl;
+            actionButtons.forEach(btn => { if(btn) btn.disabled = false; });
+        } else {
+            actionButtons.forEach(btn => { if(btn) btn.disabled = true; });
+            if(generatedUrlInput) generatedUrlInput.value = '';
+        }
+
     } catch (error) {
         actionButtons.forEach(btn => { if(btn) btn.disabled = true; });
-        if(generatedUrlInput) generatedUrlInput.value = ''; // fetch 本身失败，清空URL输入框
-        showFeedback(`验证链接时出错: ${error.message}. 请检查服务地址和网络。`, 'error', 7000);
-        console.error('验证链接时出错 (fetch catch):', error);
+        if(generatedUrlInput) generatedUrlInput.value = '';
+        showFeedback(`验证配置请求失败: ${error.message}`, 'error', 7000);
+        console.error('验证配置请求失败:', error);
+        renderLogs();
     } finally {
         if(generateBtn) generateBtn.disabled = false;
+        if(autoDetectBtn) autoDetectBtn.disabled = false;
     }
 }
 
+// --- "复制", "打开", "下载" 按钮的辅助函数 ---
 function copyUrl() {
     const generatedUrlInput = document.getElementById('generatedUrl');
-    console.log('Copy button clicked.');
-
     if (!generatedUrlInput || !generatedUrlInput.value) {
-        console.log('No URL to copy or input field not found.');
-        showFeedback('没有可复制的链接。', 'info', 3000);
-        return;
+        showFeedback('没有可复制的链接。', 'info', 3000); return;
     }
-
     const textToCopy = generatedUrlInput.value;
-    console.log('URL to copy:', textToCopy);
-
     if (navigator.clipboard && navigator.clipboard.writeText) {
-        // 优先使用 navigator.clipboard API (推荐，需安全环境)
         navigator.clipboard.writeText(textToCopy).then(() => {
-            console.log('Clipboard writeText successful (navigator.clipboard).');
             showFeedback('链接已复制到剪贴板！ (安全模式)', 'success', 3000);
-        }).catch(err => {
-            console.error('Clipboard writeText failed:', err);
-            // navigator.clipboard.writeText 失败，尝试备用方法
-            attemptLegacyCopy(textToCopy);
-        });
+        }).catch(err => attemptLegacyCopy(textToCopy) );
     } else {
-        // navigator.clipboard 不可用或没有 writeText 方法 (通常因为非安全环境)
-        console.warn('navigator.clipboard.writeText is not available. Attempting legacy copy command.');
         attemptLegacyCopy(textToCopy);
     }
 }
@@ -582,71 +575,88 @@ function copyUrl() {
 function attemptLegacyCopy(textToCopy) {
     const textArea = document.createElement("textarea");
     textArea.value = textToCopy;
-    // 避免在视口外创建元素导致页面滚动
-    textArea.style.position = "fixed";
-    textArea.style.top = "-9999px";
-    textArea.style.left = "-9999px";
+    textArea.style.position = "fixed"; textArea.style.top = "-9999px"; textArea.style.left = "-9999px";
     document.body.appendChild(textArea);
-    textArea.focus();
-    textArea.select();
-
+    textArea.focus(); textArea.select();
     try {
-        const successful = document.execCommand('copy');
-        if (successful) {
-            console.log('Legacy copy command successful (document.execCommand).');
+        if (document.execCommand('copy')) {
             showFeedback('链接已复制到剪贴板！ (备用模式)', 'success', 3000);
         } else {
-            console.error('Legacy copy command failed.');
-            showFeedback('复制失败。请手动复制链接。您的浏览器或环境可能不支持自动复制。', 'error', 5000);
+            showFeedback('复制失败。请手动复制。', 'error', 5000);
         }
     } catch (err) {
-        console.error('Error during legacy copy command:', err);
-        showFeedback('复制过程中发生错误，请手动复制。', 'error', 5000);
+        showFeedback('复制出错，请手动复制。', 'error', 5000);
     }
     document.body.removeChild(textArea);
 }
 
-function openUrl() {
+async function precheckAndOpenUrl() { // 修改 openUrl
     const generatedUrlInput = document.getElementById('generatedUrl');
     if (!generatedUrlInput || !generatedUrlInput.value) {
         showFeedback('没有可打开的链接。', 'info', 3000); return;
     }
-    window.open(generatedUrlInput.value, '_blank');
-    showFeedback('正在尝试打开链接...', 'info', 2000);
+    const urlToOpen = generatedUrlInput.value;
+    showFeedback('正在预检链接...', 'info', 0);
+    try {
+        // 使用 HEAD 请求尝试预检，减少数据传输。如果服务器不支持 HEAD 或CORS策略严格，可能需要用GET。
+        // 对于同源请求，CORS不是问题。对于跨域，如果服务器允许简单请求，HEAD可能可以。
+        // 为简单起见，如果此服务总是同源或允许GET，可以直接用GET。
+        // 但考虑到 /subscription.yaml 是获取实际配置，用GET预检会下载一次。
+        // 实际应用中，如果URL是最终客户端使用的，直接打开可能更符合用户习惯，错误由客户端自行处理。
+        // 此处，我们假设 "打开" 是为了预览，所以预检一下是有意义的。
+        const response = await fetch(urlToOpen, { method: 'HEAD', mode: 'no-cors' }); // 'no-cors'下无法读取status,但能判断网络是否可达
+        
+        // 'no-cors' 模式下，response.ok 和 response.status 通常不可靠 (会是0或false)。
+        // 这种预检方式主要用于判断网络层面是否可达，或是否有立即的重定向（虽然也看不到目标）。
+        // 对于更准确的检查，需要服务器支持CORS的HEAD请求，或者直接尝试GET并处理内容。
+        // 由于我们期望此URL返回YAML，直接打开可能更好。
+        // 此处的预检逻辑简化为直接打开，如果需要更强的预检，这里的 fetch 需要更复杂的处理。
+
+        // 简化：直接打开，如果该URL返回错误，用户会在新标签页看到。
+        window.open(urlToOpen, '_blank');
+        showFeedback('正在尝试打开链接... (若长时间无响应，请检查链接有效性)', 'info', 3000);
+
+    } catch (error) { // 这个catch主要捕获fetch本身的网络错误，对no-cors的HEAD可能用处不大
+        showFeedback(`预检链接失败: ${error.message}。将直接尝试打开。`, 'warn', 5000);
+        window.open(urlToOpen, '_blank'); // 即使预检失败，也尝试打开
+    }
 }
+
 
 async function downloadConfig() {
     const generatedUrlInput = document.getElementById('generatedUrl');
     if (!generatedUrlInput || !generatedUrlInput.value) {
-        showFeedback('请先生成链接。', 'error', 3000); return;
+        showFeedback('没有可下载的链接。', 'error', 3000); return;
     }
     const urlToFetch = generatedUrlInput.value;
-    showFeedback('正在下载配置文件...', 'info', 0); // Persistent until success/failure
+    showFeedback('正在准备下载配置文件...', 'info', 0);
     try {
         const response = await fetch(urlToFetch);
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`下载失败: ${response.status} ${response.statusText}. 服务端响应: ${errorText.substring(0,100)}`);
+        if (!response.ok) { // 捕获HTTP错误状态，例如404, 500, 502等
+            const errorText = await response.text(); // 尝试读取错误响应体
+            showFeedback(`下载失败 (HTTP ${response.status}): ${errorText.substring(0, 200)}`, 'error', 7000);
+            console.error(`下载失败: ${response.status} ${response.statusText}`, errorText);
+            return;
         }
         const blob = await response.blob();
         const disposition = response.headers.get('content-disposition');
-        let fileName = "converted_subscription.yaml";
+        let fileName = "chain_subscription.yaml"; // 默认文件名
 
-        if (disposition && disposition.indexOf('attachment') !== -1) {
-            const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
-            let matches = filenameRegex.exec(disposition);
-            if (matches != null && matches[1]) {
-                fileName = matches[1].replace(/['"]/g, '').trim();
+        if (disposition && disposition.includes('filename=')) {
+            const filenameMatch = disposition.match(/filename\*?=['"]?(?:UTF-\d['"]*)?([^;\r\n"']+)['"]?/i);
+            if (filenameMatch && filenameMatch[1]) {
+                fileName = decodeURIComponent(filenameMatch[1]);
             }
-        } else {
+        } else { // 尝试从URL路径获取文件名
             try {
                 const pathName = new URL(urlToFetch).pathname;
                 const lastSegment = pathName.substring(pathName.lastIndexOf('/') + 1);
-                if (lastSegment && (lastSegment.endsWith('.yaml') || lastSegment.endsWith('.yml')) && lastSegment.length < 100) {
+                if (lastSegment && (lastSegment.endsWith('.yaml') || lastSegment.endsWith('.yml'))) {
                     fileName = lastSegment;
                 }
-            } catch (e) { /* ignore if URL parsing fails or no suitable segment */ }
+            } catch (e) { /* 忽略URL解析或路径提取错误 */ }
         }
+
 
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
@@ -656,8 +666,8 @@ async function downloadConfig() {
         document.body.removeChild(link);
         URL.revokeObjectURL(link.href);
         showFeedback('配置文件下载成功！', 'success', 5000);
-    } catch (error) {
+    } catch (error) { // 捕获fetch网络错误或上面抛出的Error
         console.error('下载配置文件时出错:', error);
-        showFeedback(`下载配置文件时出错: ${error.message}`, 'error', 7000);
+        showFeedback(`下载配置文件出错: ${error.message}`, 'error', 7000);
     }
 }
