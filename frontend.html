@@ -333,7 +333,14 @@
             <button id="openUrlButton" class="button-secondary">↗️ 打开</button>
             <button id="downloadConfigButton" class="button-secondary">📄 下载</button>
         </div>
-        <div id="feedbackMessage" class="feedback-message feedback-info">等待操作...</div>
+
+        <div class="feedback-and-log-toggle-line" style="display: flex; align-items: center; margin-top: 12px; margin-bottom: 8px;">
+            <button id="toggleLogButton" title="显示/隐藏详细日志" style="background: none; border: none; padding: 0 8px 0 0; cursor: pointer; font-size: 1.2em; color: #6c757d; line-height: 1;">▶</button>
+            <div id="feedbackMessage" class="feedback-message feedback-info" style="flex-grow: 1; margin: 0;">等待操作...</div>
+        </div>
+        <div id="logContainer" class="hidden" style="overflow-y: auto; border: 1px solid #e0e0e0; padding: 10px; background-color: #f8f9fa; font-size: 0.85em; line-height: 1.6; margin-top: 8px;">
+            </div>
+
     </div>
 
     <div class="footer-link">

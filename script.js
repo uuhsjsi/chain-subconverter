@@ -1,6 +1,11 @@
 const MAX_MANUAL_PAIRS = 6;
 let actionButtons; // To store Copy, Open, Download buttons
 
+let feedbackHistory = [];
+const MAX_LOG_ENTRIES = 100; // 可选：限制日志条目数量
+let logContainer; // 在 DOMContentLoaded 中初始化
+let toggleLogButton; // 在 DOMContentLoaded 中初始化
+
 document.addEventListener('DOMContentLoaded', function() {
     const serviceUrlInput = document.getElementById('serviceUrl');
     const customizeServiceUrlCheckbox = document.getElementById('customizeServiceUrlSwitchInput');
@@ -9,6 +14,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const copyUrlButton = document.getElementById('copyUrlButton');
     const openUrlButton = document.getElementById('openUrlButton');
     const downloadConfigButton = document.getElementById('downloadConfigButton');
+
+    logContainer = document.getElementById('logContainer');
+    toggleLogButton = document.getElementById('toggleLogButton');
 
     // Auto-fill service URL and set its initial disabled state
     try {
@@ -51,6 +59,26 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     if (downloadConfigButton) {
         downloadConfigButton.addEventListener('click', downloadConfig);
+    }
+
+    // 在 DOMContentLoaded 的 toggleLogButton 事件监听器中
+    if (toggleLogButton && logContainer) {
+        toggleLogButton.addEventListener('click', function() {
+            const isCurrentlyHidden = logContainer.classList.contains('hidden');
+
+            if (isCurrentlyHidden) { // 即将显示
+                logContainer.classList.remove('hidden');
+                toggleLogButton.textContent = '▼'; 
+                toggleLogButton.title = '隐藏详细日志';
+                // 当日志容器内容很多时，可以考虑将其滚动到底部以便用户看到最新日志
+                // logContainer.scrollTop = logContainer.scrollHeight; 
+                // 这一行是可选的，如果日志条目很多，展开后自动滚到底部可能比较友好
+            } else { // 即将隐藏
+                logContainer.classList.add('hidden');
+                toggleLogButton.textContent = '▶'; 
+                toggleLogButton.title = '显示详细日志';
+            }
+        });
     }
 
     renderManualPairRows();
@@ -311,26 +339,79 @@ function validateInputs() {
 function showFeedback(message, type = 'info', duration = 0) {
     const feedbackElement = document.getElementById('feedbackMessage');
     if (!feedbackElement) return;
+
+    // 1. 更新主反馈行 (现有逻辑)
     feedbackElement.textContent = message;
     feedbackElement.className = 'feedback-message'; // Reset classes
     feedbackElement.classList.add(`feedback-${type}`);
 
-    // Clear previous timeout if any, to prevent default message from overriding new one too soon
     if (feedbackElement.timeoutId) {
         clearTimeout(feedbackElement.timeoutId);
     }
 
-    if (type === 'info' && message === '等待操作...') { // Don't auto-hide default message
+    if (type === 'info' && message === '等待操作...') {
+        // 对于默认的 "等待操作..." 消息，不自动添加到详细日志，也不设置超时隐藏
+    } else {
+        // 2. 添加到历史记录并更新日志容器
+        const timestamp = new Date();
+        // 使用 toLocaleTimeString() 或 toLocaleString() 来获得更易读的时间格式
+        const formattedTimestamp = `${timestamp.getHours().toString().padStart(2, '0')}:${timestamp.getMinutes().toString().padStart(2, '0')}:${timestamp.getSeconds().toString().padStart(2, '0')}`;
+
+        feedbackHistory.push({ timestamp: formattedTimestamp, type: type, message: message });
+        if (feedbackHistory.length > MAX_LOG_ENTRIES) {
+            feedbackHistory.shift(); // 移除最旧的条目
+        }
+        renderLogs(); // 调用新函数来渲染日志
+        // console.log("Calling renderLogs() from showFeedback. Message:", message);
+
+        // 3. 设置超时以恢复默认消息 (仅当 duration > 0)
+        if (duration > 0) {
+            feedbackElement.timeoutId = setTimeout(() => {
+                if (feedbackElement.textContent === message) {
+                    feedbackElement.textContent = '等待操作...';
+                    feedbackElement.className = 'feedback-message feedback-info';
+                }
+            }, duration);
+        }
+    }
+}
+
+function renderLogs() {
+    if (!logContainer) return;
+
+    logContainer.innerHTML = ''; // 清空现有日志
+
+    if (feedbackHistory.length === 0) {
+        const noLogsEntry = document.createElement('p');
+        noLogsEntry.textContent = '暂无详细日志。';
+        noLogsEntry.style.color = '#6c757d';
+        logContainer.appendChild(noLogsEntry);
         return;
     }
 
-    if (duration > 0) {
-        feedbackElement.timeoutId = setTimeout(() => {
-            if (feedbackElement.textContent === message) { // Only reset if current message is the one that set the timeout
-                feedbackElement.textContent = '等待操作...';
-                feedbackElement.className = 'feedback-message feedback-info';
-            }
-        }, duration);
+    feedbackHistory.forEach(logEntry => {
+        const logElement = document.createElement('div');
+        logElement.style.marginBottom = '5px';
+        logElement.style.paddingBottom = '5px';
+        logElement.style.borderBottom = '1px dashed #eee';
+
+        const timestampSpan = document.createElement('span');
+        timestampSpan.textContent = `[${logEntry.timestamp}] `;
+        timestampSpan.style.fontWeight = 'bold';
+        timestampSpan.style.color = logEntry.type === 'error' ? '#dc3545' : (logEntry.type === 'success' ? '#28a745' : '#007bff'); // 根据类型上色
+
+        const messageSpan = document.createElement('span');
+        messageSpan.textContent = logEntry.message;
+        if (logEntry.type === 'error') messageSpan.style.color = '#dc3545';
+
+        logElement.appendChild(timestampSpan);
+        logElement.appendChild(messageSpan);
+        logContainer.appendChild(logElement);
+    });
+
+    // 可选：如果日志区域可见，则滚动到底部
+    if (!logContainer.classList.contains('hidden')) {
+        logContainer.scrollTop = logContainer.scrollHeight;
     }
 }
 
@@ -416,45 +497,52 @@ async function generateAndValidateUrl() {
     if(generateBtn) generateBtn.disabled = true;
 
     const generatedUrlInput = document.getElementById('generatedUrl');
-    // 初始禁用结果按钮并清空之前的URL
     actionButtons.forEach(btn => { if(btn) btn.disabled = true; });
-    if(generatedUrlInput) generatedUrlInput.value = '';
+    if(generatedUrlInput) generatedUrlInput.value = ''; // 无论如何，操作前先清空
 
     const url = generateUrlLogic();
 
     if (!url) {
-        if(generateBtn) generateBtn.disabled = false; // 仅重置生成按钮
+        if(generateBtn) generateBtn.disabled = false;
+        // feedbackMessage 已在 generateUrlLogic 或 validateInputs 中设置
+        // (确保有个默认的恢复，如果其他地方没有设置错误信息的话)
         const feedbackElement = document.getElementById('feedbackMessage');
-        if (feedbackElement && !feedbackElement.className.includes('error') && !feedbackElement.className.includes('success')) {
-             showFeedback('等待操作...', 'info');
+         if (feedbackElement && !feedbackElement.className.includes('error') && !feedbackElement.className.includes('success')) {
+             showFeedback('等待操作...', 'info'); // 以防万一，恢复默认提示
         }
+        // generatedUrlInput 已在前面清空
         return;
     }
 
-    // 如果生成了URL，先填充到输入框
+    // 尝试填充URL，但如果验证失败，它将被再次清空
     if(generatedUrlInput) generatedUrlInput.value = url;
 
     try {
         const response = await fetch(url);
-        // 不论验证成功与否，只要URL已生成并尝试过请求，就启用操作按钮
-        actionButtons.forEach(btn => { if(btn) btn.disabled = false; });
 
         if (!response.ok) {
             const errorTextFromServer = await response.text();
             showFeedback(`链接验证失败 (HTTP ${response.status}): ${errorTextFromServer.substring(0,100)}`, 'error', 7000);
-            // 即使验证失败，URL仍在输入框中，用户可以复制
+            actionButtons.forEach(btn => { if(btn) btn.disabled = true; });
+            if(generatedUrlInput) generatedUrlInput.value = ''; // 验证失败，清空URL输入框
         } else {
             const contentType = response.headers.get("content-type");
-            if (contentType && (contentType.toLowerCase().includes("yaml") || contentType.toLowerCase().includes("text"))) {
+            if (contentType && (contentType.toLowerCase().includes("yaml") || contentType.toLowerCase().includes("text/plain"))) {
                 showFeedback('链接已生成并验证成功！', 'success', 5000);
+                actionButtons.forEach(btn => { if(btn) btn.disabled = false; });
+                // 此时 generatedUrlInput.value = url; 是有效的，保留
+            } else if (contentType) {
+                showFeedback(`链接已生成，但响应类型 (${contentType}) 非预期YAML。仍可尝试操作。`, 'info', 7000);
+                actionButtons.forEach(btn => { if(btn) btn.disabled = false; });
             } else {
-               showFeedback(`链接已生成，但响应类型 (${contentType || '未知'}) 可能非预期。仍可尝试使用。`, 'info', 7000);
+                 showFeedback(`链接已生成，但响应类型未知。请谨慎操作。`, 'info', 7000);
+                 actionButtons.forEach(btn => { if(btn) btn.disabled = false; });
             }
         }
     } catch (error) {
-        // 网络错误等导致fetch失败，也启用操作按钮，因为URL已在输入框中
-        actionButtons.forEach(btn => { if(btn) btn.disabled = false; });
-        showFeedback(`验证链接时出错: ${error.message}. 请检查服务地址和网络。链接仍已填充，可尝试手动操作。`, 'error', 7000);
+        actionButtons.forEach(btn => { if(btn) btn.disabled = true; });
+        if(generatedUrlInput) generatedUrlInput.value = ''; // fetch 本身失败，清空URL输入框
+        showFeedback(`验证链接时出错: ${error.message}. 请检查服务地址和网络。`, 'error', 7000);
         console.error('验证链接时出错 (fetch catch):', error);
     } finally {
         if(generateBtn) generateBtn.disabled = false;
