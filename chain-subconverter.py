@@ -81,6 +81,10 @@ def apply_node_pairs_to_config(config_object, node_pairs_list):
     返回: (success_boolean, modified_config_object, logs_list)
     """
     logs = []
+    # _add_log_entry 需要在别处定义，例如：
+    # def _add_log_entry(logs_list, level, message):
+    #     logs_list.append({"level": level, "message": message})
+    
     _add_log_entry(logs, "info", f"开始应用 {len(node_pairs_list)} 个节点对到配置中。")
 
     if not isinstance(config_object, dict):
@@ -127,19 +131,27 @@ def apply_node_pairs_to_config(config_object, node_pairs_list):
         if not landing_node_found:
             _add_log_entry(logs, "warn", f"节点对中的落地节点 '{landing_name}' 未在 'proxies' 列表中找到，已跳过此对。")
 
-    if applied_count == len(node_pairs_list) and len(node_pairs_list) > 0:
-        _add_log_entry(logs, "info", f"成功应用所有 {applied_count} 个节点对。")
-    elif applied_count > 0:
-        _add_log_entry(logs, "warn", f"成功应用 {applied_count} 个（共 {len(node_pairs_list)} 个）节点对。部分节点对可能被跳过。")
-    elif len(node_pairs_list) > 0 : # applied_count is 0
-        _add_log_entry(logs, "error", "未能应用任何提供的节点对。")
-        return False, config_object, logs # 如果一个都没应用成功，可以考虑整体失败
-    
-    # 如果没有任何节点对需要应用，也视为成功
-    if len(node_pairs_list) == 0:
-        _add_log_entry(logs, "info", "没有提供节点对，未进行修改。")
-
-    return True, config_object, logs
+    # REVISED success status logic:
+    if len(node_pairs_list) > 0:  # If pairs were provided to be applied
+        if applied_count == 0:
+            _add_log_entry(logs, "error", "未能应用任何提供的节点对。请检查节点名称是否与订阅中的节点匹配。")
+            return False, config_object, logs  # Explicit failure if no pairs applied
+        elif applied_count < len(node_pairs_list):
+            _add_log_entry(logs, "warn", f"成功应用 {applied_count} 个（共 {len(node_pairs_list)} 个）节点对。部分节点对因无法匹配而被跳过。请核对节点名称。")
+            # This is now considered a failure from the API's success flag perspective
+            return False, config_object, logs
+        else:  # applied_count == len(node_pairs_list)
+            _add_log_entry(logs, "info", f"成功应用所有 {applied_count} 个节点对。")
+            return True, config_object, logs # Success only if all provided pairs were applied
+    else:  # len(node_pairs_list) == 0 (no pairs were provided to be applied)
+        _add_log_entry(logs, "info", "没有提供节点对进行应用，配置未修改。")
+        # If node_pairs_list is empty, it means either the user sent no pairs,
+        # or the frontend filtered them all out. If the API call /subscription.yaml
+        # intends for pairs to be optional, this should be True.
+        # If /api/validate_configuration is called with empty node_pairs,
+        # the frontend should have already caught "must provide at least one pair".
+        # So, an empty node_pairs_list here is treated as "nothing to do, so success".
+        return True, config_object, logs
 
 
 # --- 关键字匹配辅助函数 ---

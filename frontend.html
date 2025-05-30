@@ -12,12 +12,12 @@
     <link rel="icon" href="favicon.ico" type="image/x-icon">
     <style>
         body {
-            background-color: #f0f2f5; /* c.body background */
-            font-family: "Segoe UI", sans-serif; /* c.body font */
-            margin: auto; /* c.body margin for centering */
-            padding: 20px; /* c.body padding */
-            max-width: 960px; /* c.body max-width */
-            color: #333; /* c.body color */
+            background-color: #f0f2f5;
+            font-family: "Segoe UI", sans-serif;
+            margin: auto;
+            padding: 20px;
+            max-width: 960px;
+            color: #333;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -27,34 +27,34 @@
 
         h1 {
             text-align: center;
-            color: #333; /* c.header color */
-            margin-bottom: 24px; /* c.header margin */
-            font-size: 28px; /* c.header font-size */
+            color: #333;
+            margin-bottom: 24px;
+            font-size: 28px;
             font-weight: bold;
             width: 100%;
         }
 
-        .config-area, .response-area { /* These act as .section from chatgpt.html */
+        .config-area, .response-area {
             width: 100%;
             box-sizing: border-box;
-            background-color: #ffffff; /* c.section background */
-            border-radius: 12px; /* c.section border-radius */
-            padding: 20px; /* c.section padding */
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05); /* c.section box-shadow */
-            margin-bottom: 20px; /* c.section margin-bottom */
+            background-color: #ffffff;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+            margin-bottom: 20px;
         }
 
-        .response-area { /* Specific styling for response area */
-            background-color: #f4f6fa; /* c.response-section background */
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04); /* c.response-section box-shadow */
-            border: 1px solid #e0e0e0; /* 添加一个1像素宽、实线、浅灰色的边框 */
+        .response-area {
+            background-color: #f4f6fa;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+            border: 1px solid #e0e0e0;
         }
 
-        .sub-section { /* Adopted from chatgpt.html's .sub-section style */
+        .sub-section {
             padding: 16px;
-            border-left: 4px solid #d0d7de;
+            border-left: 4px solid #d0d7de; /* 主题色或中性色 */
             margin-top: 16px;
-            background-color: #fafbfc;
+            background-color: #fafbfc; /* 稍浅于section背景或特定背景 */
             border-radius: 8px;
             margin-bottom: 16px;
         }
@@ -62,24 +62,31 @@
             margin-top: 0;
         }
 
-        label.form-label { /* For titles within sub-sections */
+        label.form-label {
             display: block;
             font-weight: bold;
-            margin-bottom: 10px; /* Increased margin for clarity */
+            margin-bottom: 12px; /* 增加与下方内容的间距 */
             color: #333;
-            font-size: 1.05em; /* Slightly larger for sub-section titles */
+            font-size: 1.05em;
         }
 
         input[type="url"],
-        input[type="text"] { /* Styling from chatgpt.html */
+        input[type="text"] {
             width: 100%;
             padding: 10px;
-            border: 1px solid #ccc;
+            border: 1px solid #cbd5e1; /* 边框颜色变浅 */
             border-radius: 6px;
             box-sizing: border-box;
             margin-top: 5px;
-            margin-bottom: 8px; /* c.input margin-bottom */
+            margin-bottom: 8px;
             font-size: 1em;
+            background-color: #fff; /* 确保背景色 */
+            color: #2d3748; /* 输入文字颜色 */
+        }
+        input[type="url"]:focus,
+        input[type="text"]:focus {
+            border-color: #3b82f6; /* 焦点时主操作色 */
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); /* 焦点辉光 */
         }
         input[type="url"]:disabled,
         input[type="text"]:disabled {
@@ -88,69 +95,67 @@
             opacity: 0.7;
         }
 
-        /* Slider Toggle Switch Styles from chatgpt.html */
-        .toggle-group { /* Corresponds to c.toggle-line */
+        .toggle-group {
             display: flex;
             align-items: center;
-            margin: 5px 0;
+            margin: 8px 0; /* 调整margin */
         }
 
-        .switch { /* c.switch */
+        .switch {
             position: relative;
             display: inline-block;
-            width: 40px; /* 原为 46px, 略微减小宽度 */
-            height: 20px; /* 原为 24px, 减小高度 */
+            width: 40px;
+            height: 20px;
             flex-shrink: 0;
-            margin-right: 10px;
         }
-        .slider { /* c.slider */
+        .slider {
             position: absolute;
             cursor: pointer;
             top: 0; left: 0; right: 0; bottom: 0;
-            background-color: #ccc;
+            background-color: #cbd5e1; /* 未激活时颜色 */
             transition: .4s;
-            border-radius: 20px; /* 对应新的高度，保持药丸形状 */
+            border-radius: 20px;
         }
-        .slider:before { /* c.slider:before */
+        .slider:before {
             position: absolute;
             content: "";
-            height: 16px; /* 原为 18px (计算方式: 新高度20px - 2*内边距2px) */
-            width: 16px;  /* 原为 18px */
-            left: 2px;    /* 原为 3px, 减小内边距 */
-            bottom: 2px;  /* 原为 3px */
+            height: 16px;
+            width: 16px;
+            left: 2px;
+            bottom: 2px;
             background-color: white;
             transition: .4s;
             border-radius: 50%;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
-        input:checked + .slider { /* c.input:checked + .slider */
-            background-color: #3b82f6;
+        input:checked + .slider {
+            background-color: #3b82f6; /* 激活时主操作色 */
         }
-        input:focus + .slider { /* Retained focus style */
-            box-shadow: 0 0 1px #3b82f6;
+        input:focus + .slider {
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
         }
-        input:checked + .slider:before { /* c.input:checked + .slider:before */
-            transform: translateX(20px); /* 原为 22px (计算方式: 新宽度40px - 滑块宽度16px - 2*内边距2px) */
+        input:checked + .slider:before {
+            transform: translateX(20px);
         }
 
-        .switch-label-text { /* Corresponds to c.toggle-label */
-            margin-left: 0; /* margin-right on .switch handles spacing */
-            font-weight: bold;
-            color: #333;
+        .switch-label-text {
+            font-weight: 500; /* 调整字重 */
+            color: #4a5568;  /* 调整颜色 */
             cursor: pointer;
-            font-size: 1em;
+            font-size: 0.95em; /* 调整大小 */
         }
 
-        .input-description, .conditional-text { /* Style for descriptive texts */
-            font-size: 0.85em;
-            color: #777; /* c.conditional-text color */
-            margin-top: 5px;
-            margin-bottom: 10px;
+        .input-description {
+            font-size: 0.8em; /* 统一减小说明文字大小 */
+            color: #718096; /* 说明文字颜色 */
+            margin-top: 4px; /* 微调与上方元素间距 */
+            margin-bottom: 12px;/* 增加与下方元素间距 */
+            line-height: 1.5;
         }
-        /* Specific conditional text alignment if needed */
-
+        
         #manualPairsSection {
-            margin-top: 5px;
-            padding-top: 5px;
+            margin-top: 8px;
+            padding-top: 8px;
         }
         .manual-pair-dynamic-row {
             display: flex;
@@ -161,117 +166,162 @@
         .manual-pair-dynamic-row .row-number-cell {
             flex: 0 0 20px;
             text-align: right;
-            color: #777;
+            color: #718096;
             font-size: 0.9em;
         }
         .manual-pair-dynamic-row .input-cell { flex: 1; }
         .manual-pair-dynamic-row .dialer-proxy-label-cell {
-            flex: 0 0 auto; padding: 0 5px; color: #555; font-size: 0.9em;
+            flex: 0 0 auto; padding: 0 5px; color: #4a5568; font-size: 0.9em;
         }
         .manual-pair-dynamic-row .actions-cell {
             flex: 0 0 auto; display: flex; gap: 5px;
         }
 
-        .action-button-inline { /* For + / - buttons, matching c.action-button-inline */
+        .action-button-inline {
             padding: 4px 8px;
             font-size: 0.9em;
             border-radius: 6px;
-            border: 1px solid #ccc;
-            background-color: #f0f0f0;
+            border: 1px solid #d1d5db; /* 边框颜色 */
+            background-color: #f8f9fa; /* 背景色 */
+            color: #4a5568; /* 文字颜色 */
             cursor: pointer;
             line-height: 1;
+            transition: background-color 0.2s ease, border-color 0.2s ease;
         }
-        .action-button-inline:hover:not(:disabled) { background-color: #e0e0e0; }
-        .action-button-inline.add { color: #27ae60; border-color: #a0d4b4;} /* c.add style */
-        .action-button-inline.add:hover:not(:disabled) { background-color: #e6ffed; }
-        .action-button-inline.remove { color: #c0392b; border-color: #e6a8a1;} /* c.remove style */
-        .action-button-inline.remove:hover:not(:disabled) { background-color: #fdd; }
-        .action-button-inline:disabled { /* c.add:disabled style */
-            background-color: #e9ecef;
-            color: #adb5bd;
-            border-color: #ced4da;
+        .action-button-inline:hover:not(:disabled) { 
+            background-color: #e9ecef; 
+            border-color: #cbd5e1;
+        }
+        .action-button-inline.add { color: #38a169; border-color: #9ae6b4;} /* 绿色系 */
+        .action-button-inline.add:hover:not(:disabled) { background-color: #f0fff4; border-color: #68d391; }
+        .action-button-inline.remove { color: #e53e3e; border-color: #feb2b2;} /* 红色系 */
+        .action-button-inline.remove:hover:not(:disabled) { background-color: #fff5f5; border-color: #fc8181;}
+        .action-button-inline:disabled {
+            background-color: #f7fafc;
+            color: #a0aec0;
+            border-color: #e2e8f0;
             cursor: not-allowed;
             opacity: 0.7;
         }
 
-        .button-primary { /* Corresponds to c.generate-button */
+        .button-primary {
             background-color: #3b82f6;
             color: white;
             border: none;
-            padding: 12px; /* c.generate-button padding */
-            border-radius: 8px; /* c.generate-button border-radius */
+            padding: 12px;
+            border-radius: 8px;
             width: 100%;
-            font-size: 1em; /* c.generate-button font-size */
-            margin-top: 20px; /* c.generate-button margin-top */
+            font-size: 1em;
             cursor: pointer;
-            font-weight: 600; /* Added for consistency with other buttons */
+            font-weight: 600;
             transition: background-color 0.2s ease;
+            margin-top: 20px;
         }
         .button-primary:hover:not(:disabled) { background-color: #2563eb; }
-        .button-primary:disabled { /* c.generate-button:disabled */
+        .button-primary:disabled {
             background-color: #cbd5e1;
             cursor: not-allowed;
         }
 
-        .result-buttons { /* c.result-buttons */
+        .result-buttons {
             display: flex;
             gap: 10px;
             margin-top: 12px;
             flex-wrap: wrap;
         }
-        .button-secondary { /* Corresponds to c.action-button or c.button-secondary */
-            background-color: #6366f1; /* c.action-button background */
-            color: white;
-            padding: 10px 16px; /* c.action-button padding */
-            border: none;
-            border-radius: 8px; /* c.action-button border-radius */
-            cursor: pointer;
-            font-weight: 600; /* c.action-button font-weight */
-            flex: 1 1 auto; /* Adapting for flexible width */
-            text-align: center;
-            transition: background-color 0.2s ease;
-        }
-        .button-secondary:hover:not(:disabled) { background-color: #4f46e5; }
-        .button-secondary:disabled { /* c.action-button:disabled */
-            background-color: #d1d5db;
-            color: #787f84; /* Adjusted for better visibility on lighter grey */
-            cursor: not-allowed;
+        
+        /* 用于“复制/打开/下载”按钮的样式 - 修改后与 .button-action-aux 一致 */
+        .button-secondary-action {
+            background-color: #e2e8f0;    /* 与 .button-action-aux 一致 */
+            color: #1f2937;               /* 与 .button-action-aux 一致 */
+            padding: 8px 12px;           /* 与 .button-action-aux 一致 (原padding也为此值) */
+            border: 1px solid #d1d5db; /* 增加边框以突出 */
+            border-radius: 6px;          /* 与 .button-action-aux 一致 (原border-radius也为此值) */
+            cursor: pointer;              /* 保持 */
+            font-weight: 500;             /* 保持 */
+            font-size: 0.95em;            /* 与 .button-action-aux 一致 */
+            flex: 1 1 auto;         
+            text-align: center;     
+            transition: background-color 0.2s ease, color 0.2s ease; /* 与 .button-action-aux 一致 */
         }
 
-        #feedbackMessage { /* c.feedback-message */
-            margin-top: 12px;
-            padding: 10px;
+        .button-secondary-action:hover:not(:disabled) {
+            background-color: #cbd5e1;    /* 与 .button-action-aux 一致 */
+            color: #1e293b;               /* 与 .button-action-aux 一致 */
+        }
+
+        .button-secondary-action:disabled {
+            background-color: #f1f5f9;    /* 与 .button-action-aux 一致 */
+            color: #94a3b8;               /* 与 .button-action-aux 一致 */
+            border-color: #e9ecef;   /* 更清晰的禁用边框 */
+            cursor: not-allowed;          /* 保持 */
+            opacity: 0.7;                 /* 保持 */
+        }
+
+        /* .button-action-aux 的样式保持不变 (作为参考标准) */
+        .button-action-aux {
+            background-color: #e2e8f0;
+            color: #1f2937;
+            padding: 8px 12px;
+            border: none;
             border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 0.95em;
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+
+        .button-action-aux:hover:not(:disabled) {
+            background-color: #cbd5e1;
+            color: #1e293b;
+        }
+
+        .button-action-aux:disabled {
+            background-color: #f1f5f9;
+            color: #94a3b8;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        /* 反馈信息区容器样式 */
+        #feedbackAreaContainer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 15px;
+            margin-bottom: 8px;
+            padding: 10px; /* 内边距应用到容器 */
+            border-radius: 6px; /* 圆角应用到容器 */
+            /* 背景色和文字颜色将由JS动态添加的类控制 */
+        }
+        #feedbackMessage { /* 主反馈信息文本 */
+            flex-grow: 1;
+            text-align: left; /* 文字左对齐 */
             font-size: 0.9em;
-            text-align: center;
+            white-space: nowrap;     /* Prevent wrapping */
+            overflow: hidden;        /* Hide overflow */
+            text-overflow: ellipsis; /* Show ellipsis for overflow */
+            /* line-height anpassend an #toggleLogButton if needed, or ensure vertical alignment */
+            line-height: 1.2em; /* Match approx toggleLogButton font-size */
+            padding-top: 2px; /* Minor adjustment for vertical alignment with button */
         }
-        .feedback-success {
-            background-color: #e6ffed;
-            color: #2e7d32;
-        }
-        .feedback-error {
-            background-color: #fdecea;
-            color: #b00020;
-        }
-        .feedback-info {
-            background-color: #e0f2fe;
-            color: #0288d1;
-        }
+        /* feedback-success, error, info, warn 类现在应用到 #feedbackAreaContainer */
+        .feedback-success { background-color: #e6ffed; color: #2e7d32; }
+        .feedback-error   { background-color: #fdecea; color: #b00020; }
+        .feedback-info    { background-color: #e0f2fe; color: #0288d1; }
+        .feedback-warn    { background-color: #fff3cd; color: #856404; }
+
 
         #generatedUrl {
             background-color: #fff;
-            border: 1px solid #ccc;
+            border: 1px solid #cbd5e1; /* 边框颜色变浅 */
             font-size: 0.95em;
             word-break: break-all;
             margin-bottom: 5px;
+            color: #2d3748; /* 输入文字颜色 */
         }
         .hidden { display: none !important; }
-        .error-message {
-            color: #b00020;
-            font-size: 0.85em;
-            margin-top: 5px;
-        }
-
+        
         .footer-link {
             text-align: center;
             margin-top: 30px;
@@ -281,7 +331,13 @@
         }
         .footer-link a { color: #3498db; text-decoration: none; }
         .footer-link a:hover { text-decoration: underline; }
-
+        
+        .log-message-content {
+            overflow-wrap: break-word;
+            word-break: break-all; /* More aggressive for URLs */
+            white-space: pre-wrap; /* Preserves whitespace and allows wrapping */
+            display: inline; /* Or block if each message should be on its own visual line within the span */
+        }
     </style>
 </head>
 <body>
@@ -289,57 +345,70 @@
 
     <div class="config-area">
         <div class="sub-section" id="subscriptionLinkGroup">
-            <label for="remoteUrl" class="form-label">订阅链接</label>
-            <input type="url" id="remoteUrl" placeholder="请输入包含前置和落地节点的订阅配置链接" required>
-            <small class="input-description">建议通过订阅转换服务合并生成。如使用OpenClash，可点击配置订阅➡更新，在运行日志➡插件日志中找到</small>
+            <label for="remoteUrl" class="form-label">原始订阅链接</label>
+            <input type="url" id="remoteUrl" placeholder="请输入包含所有目标节点和组的订阅配置链接" required>
+            <small class="input-description">此链接应指向一个有效的 YAML 格式订阅。如使用 OpenClash，可在更新订阅后的插件日志中找到合并后的 URL。</small>
         </div>
 
         <div class="sub-section" id="dialerConfigGroup">
             <label class="form-label">链式节点对配置</label>
-            
-            <button id="autoDetectButton" class="button-primary" style="width: auto; padding: 8px 15px; font-size: 0.95em; margin-bottom: 15px; background-color: #5cb85c; border-color: #4cae4c;">
-                🔍 自动识别并填充节点对
-            </button>
-            <small class="input-description" style="margin-top: -10px; margin-bottom:15px;">点击上方按钮尝试自动识别。节点命名需符合规范才能成功识别。</small>
-
             <div id="manualPairsSection">
-                <label for="manualPairsInputsContainer" style="font-size: 0.9em; color: #555; display: block; margin-bottom: 8px;">落地节点 与 前置节点/组 名称:</label>
                 <div id="manualPairsInputsContainer">
                     </div>
+                <div class="node-pair-actions-footer" style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 15px; gap: 15px;">
+                    <small class="input-description" style="flex-grow: 1; margin-bottom: 0; text-align: left;">
+                        手动输入或点击右侧按钮尝试自动识别。节点命名需规范以确保识别准确性，结果仅供参考，请仔细核对。
+                    </small>
+                    <button id="autoDetectButton" class="button-action-aux">🔍 自动识别</button>
+                </div>
             </div>
-
         </div>
 
-        <div class="sub-section" id="serviceAddressGroup">
-            <div class="toggle-group">
-                 <label class="switch">
-                    <input type="checkbox" id="customizeServiceUrlSwitchInput">
-                    <span class="slider"></span>
-                </label>
-                <label class="switch-label-text" for="customizeServiceUrlSwitchInput">自定义服务根地址</label>
+        <!-- <div id="advancedConfigToggleContainer" style="height: 20px; position: relative;">
+            <button type="button" id="toggleServiceAddressConfigButton" title="配置服务地址 (高级)" 
+                    style="background: none; border: none; padding: 0; font-size: 1.3em; /* Slightly larger icon */
+                           cursor: pointer; color: #6c757d; /* Subdued color */
+                           position: absolute; right: 5px; /* Position to the right */
+                           top: -15px; /* Adjust to tuck it into the gap */">
+                ⚙️
+            </button>
+        </div> -->
+
+        <div class="sub-section hidden" id="serviceAddressGroup">
+            <label for="serviceUrl" class="form-label">服务根地址</label>
+            <input type="url" id="serviceUrl" placeholder="例如：http://localhost:11200">
+            <div class="service-url-footer" style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 8px; gap: 15px;">
+                <small class="input-description" style="flex-grow: 1; margin-bottom: 0; text-align: left;">
+                    本转换服务的后端访问地址。通常自动填充即可。
+                </small>
+                <div class="toggle-group" style="margin: 0;">
+                    <label class="switch-label-text" for="customizeServiceUrlSwitchInput" style="margin-right:10px; margin-left:0;">自定义</label>
+                    <label class="switch">
+                        <input type="checkbox" id="customizeServiceUrlSwitchInput">
+                        <span class="slider"></span>
+                    </label>
+                </div>
             </div>
-            <input type="url" id="serviceUrl" placeholder="请输入本服务根地址，注意本机/内/外网的可访问性" style="margin-top: 8px;">
-            <small class="input-description">本转换服务的访问地址，一般默认自动填充即可</small>
         </div>
 
-        <button id="generateLinkButton" class="button-primary">🔄 生成</button>
+        <button id="generateLinkButton" class="button-primary">🔄 生成配置链接</button>
     </div>
 
     <div class="response-area">
-        <input type="text" id="generatedUrl" readonly placeholder="生成后的配置链接">
+        <input type="text" id="generatedUrl" readonly placeholder="验证通过后将在此显示生成的订阅链接">
         <div class="result-buttons">
-            <button id="copyUrlButton" class="button-secondary">🔗 复制</button>
-            <button id="openUrlButton" class="button-secondary">↗️ 打开</button>
-            <button id="downloadConfigButton" class="button-secondary">📄 下载</button>
+            <button id="copyUrlButton" class="button-secondary-action">🔗 复制</button>
+            <button id="openUrlButton" class="button-secondary-action">↗️ 打开</button>
+            <button id="downloadConfigButton" class="button-secondary-action">📄 下载</button>
         </div>
-
-        <div class="feedback-and-log-toggle-line" style="display: flex; align-items: center; margin-top: 12px; margin-bottom: 8px;">
-            <button id="toggleLogButton" title="显示/隐藏详细日志" style="background: none; border: none; padding: 0 8px 0 0; cursor: pointer; font-size: 1.2em; color: #6c757d; line-height: 1;">▶</button>
-            <div id="feedbackMessage" class="feedback-message feedback-info" style="flex-grow: 1; margin: 0;">等待操作...</div>
+        
+        <div id="feedbackAreaContainer" class="feedback-message feedback-info" style="display: flex; align-items: center; margin-top: 15px; margin-bottom: 8px; padding: 10px; border-radius: 6px;">
+            <button id="toggleLogButton" title="显示/隐藏详细日志" style="background: none; border: none; padding: 0 10px 0 0; cursor: pointer; font-size: 1.2em; color: inherit; line-height: 1;">▶</button>
+            <div id="feedbackMessage" style="flex-grow: 1; text-align: center;">等待操作...</div>
         </div>
-        <div id="logContainer" class="hidden" style="overflow-y: auto; border: 1px solid #e0e0e0; padding: 10px; background-color: #f8f9fa; font-size: 0.85em; line-height: 1.6; margin-top: 8px;">
+        
+        <div id="logContainer" class="hidden" style="overflow-y: auto; border: 1px solid #e0e0e0; padding: 10px; background-color: #f8f9fa; font-size: 0.85em; line-height: 1.6; margin-top: 0; /* 紧随feedbackAreaContainer */">
             </div>
-
     </div>
 
     <div class="footer-link">
