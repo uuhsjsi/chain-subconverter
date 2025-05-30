@@ -331,7 +331,7 @@
         }
         .footer-link a { color: #3498db; text-decoration: none; }
         .footer-link a:hover { text-decoration: underline; }
-        
+
         .log-message-content {
             overflow-wrap: break-word;
             word-break: break-all; /* More aggressive for URLs */
@@ -346,8 +346,8 @@
     <div class="config-area">
         <div class="sub-section" id="subscriptionLinkGroup">
             <label for="remoteUrl" class="form-label">原始订阅链接</label>
-            <input type="url" id="remoteUrl" placeholder="请输入包含所有目标节点和组的订阅配置链接" required>
-            <small class="input-description">此链接应指向一个有效的 YAML 格式订阅。如使用 OpenClash，可在更新订阅后的插件日志中找到合并后的 URL。</small>
+            <input type="url" id="remoteUrl" placeholder="请输入包含落地与前置节点的YAML订阅链接" required>
+            <small class="input-description">建议使用订阅转换服务合并生成；如使用OpenClash，可在更新订阅后的插件日志中找到合并后的URL。</small>
         </div>
 
         <div class="sub-section" id="dialerConfigGroup">
@@ -357,7 +357,7 @@
                     </div>
                 <div class="node-pair-actions-footer" style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 15px; gap: 15px;">
                     <small class="input-description" style="flex-grow: 1; margin-bottom: 0; text-align: left;">
-                        手动输入或点击右侧按钮尝试自动识别。节点命名需规范以确保识别准确性，结果仅供参考，请仔细核对。
+                        请输入落地与前置节点/组名。若使用自动识别，节点命名需符合规范（详见项目文档）。
                     </small>
                     <button id="autoDetectButton" class="button-action-aux">🔍 自动识别</button>
                 </div>
@@ -403,7 +403,7 @@
         </div>
         
         <div id="feedbackAreaContainer" class="feedback-message feedback-info" style="display: flex; align-items: center; margin-top: 15px; margin-bottom: 8px; padding: 10px; border-radius: 6px;">
-            <button id="toggleLogButton" title="显示/隐藏详细日志" style="background: none; border: none; padding: 0 10px 0 0; cursor: pointer; font-size: 1.2em; color: inherit; line-height: 1;">▶</button>
+            <button id="toggleLogButton" title="显示/隐藏详细日志" style="background: none; border: none; padding: 0 10px 0 0; cursor: pointer; font-size: 1.2em; color: inherit; line-height: 1;">></button>
             <div id="feedbackMessage" style="flex-grow: 1; text-align: center;">等待操作...</div>
         </div>
         

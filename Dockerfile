@@ -1,29 +1,49 @@
-# 使用一个轻量级的 Python 官方镜像作为基础
+# Use an official Python runtime as a parent image
 FROM python:3.11-slim
 
-# 设置工作目录
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+# Default port, can be overridden by PORT env var at runtime
+ENV PORT=11200
+# Default log level, can be overridden by LOG_LEVEL env var at runtime
+ENV LOG_LEVEL="INFO"
+# Default SSL verification for outgoing requests, can be overridden by REQUESTS_SSL_VERIFY env var at runtime
+# Valid values: "true", "false", or a path to a CA bundle.
+ENV REQUESTS_SSL_VERIFY="true"
+
+# Set the working directory in the container
 WORKDIR /app
 
-# 安装 Python 依赖
-# 首先复制 requirements.txt (如果单独管理依赖) 或直接安装
-# 这里我们直接安装脚本中导入的库
-RUN pip install --no-cache-dir requests ruamel.yaml
+# Copy the requirements file
+COPY requirements.txt .
 
-# 复制 Python 脚本到工作目录
-COPY chain-subconverter.py ./
+# Install build dependencies, then Python packages, then remove build dependencies.
+# This is to compile any C extensions (like ruamel.yaml.clib) if wheels are not available
+# and to keep the final image size smaller.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gcc libc-dev && \
+    pip install --no-cache-dir -r requirements.txt && \
+    apt-get purge -y --auto-remove gcc libc-dev && \
+    rm -rf /var/lib/apt/lists/*
 
-# 设置默认环境变量 (这些可以在 docker run 命令中覆盖)
-ENV PORT=11200
-# 请将下面的 REMOTE_URL 替换为您实际要使用的默认远程订阅链接
-ENV REMOTE_URL="<在这里输入你的订阅URL>"
-ENV MANUAL_DIALER_ENABLED=0
-ENV LANDING_NODE_1=""
-ENV DIALER_NODE_1=""
-ENV LANDING_NODE_2=""
-ENV DIALER_NODE_2=""
+# Copy the application code into the container
+COPY chain-subconverter.py .
+COPY frontend.html .
+COPY script.js .
+# The application serves a favicon.ico. Ensure this file is present in the same directory
+# as the Dockerfile during the build process.
+COPY favicon.ico .
 
-# 暴露脚本监听的端口
-EXPOSE 11200
+# Add a non-root user for security and switch to it
+# The application will create a 'logs' directory within /app.
+# Since /app will be owned by appuser, this will succeed.
+RUN useradd -m -s /bin/bash appuser && \
+    chown -R appuser:appuser /app
+USER appuser
 
-# 容器启动时运行的命令
+# Expose the port the application runs on (defined by the PORT environment variable)
+EXPOSE ${PORT}
+
+# Define the command to run the application
 CMD ["python", "chain-subconverter.py"]
