@@ -27,12 +27,30 @@
 
         h1 {
             text-align: center;
-            color: #333;
             margin-bottom: 24px;
-            font-size: 28px;
-            font-weight: bold;
-            width: 100%;
+            font-size: 30px; /* Slightly larger for main title */
+            display: flex;
+            justify-content: center;
+            align-items: baseline;
+            flex-wrap: wrap;
         }
+
+        .main-title-text {
+            font-weight: 700; /* Bold for emphasis */
+            color: #2c3e50;  /* Modern, soft dark blue-gray */
+            font-size: 1.2em;  /* Slightly larger font size */
+            margin-right: 5px; /* Space between the two parts */
+        }
+
+        .h1-suffix {
+            font-family: "Segoe UI", sans-serif;
+            font-size: 0.75em; /* Smaller for subheading */
+            color: #888;      /* Light gray to de-emphasize */
+            font-weight: 400;  /* Normal weight */
+            letter-spacing: 0.5px;
+            margin-left: 5px;
+        }
+
 
         .config-area, .response-area {
             width: 100%;
@@ -341,7 +359,10 @@
     </style>
 </head>
 <body>
-    <h1>链式代理 · 订阅转换器 for Mihomo</h1>
+    <h1>
+    <span class="main-title-text">链式代理 · 订阅转换器</span>
+    <span class="h1-suffix">for Mihomo</span>
+    </h1>
 
     <div class="config-area">
         <div class="sub-section" id="subscriptionLinkGroup">
