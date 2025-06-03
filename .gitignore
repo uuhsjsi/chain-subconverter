@@ -137,3 +137,4 @@ venv/Scripts/activate.bat
 venv/Scripts/activate
 venv/pyvenv.cfg
 logs/server.log.1
+Dockerfile.txt

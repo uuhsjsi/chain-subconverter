@@ -44,7 +44,6 @@ document.addEventListener('DOMContentLoaded', function() {
     toggleLogButton = document.getElementById('toggleLogButton');
 
     const serviceAddressGroup = document.getElementById('serviceAddressGroup'); 
-    const toggleServiceAddressConfigButton = document.getElementById('toggleServiceAddressConfigButton'); 
 
     try {
         const currentOrigin = window.location.origin;
@@ -69,12 +68,11 @@ document.addEventListener('DOMContentLoaded', function() {
         customizeServiceUrlCheckbox.addEventListener('change', toggleServiceUrlInput);
     }
 
-    if (toggleServiceAddressConfigButton && serviceAddressGroup) {
-        toggleServiceAddressConfigButton.addEventListener('click', function() {
-            const isHidden = serviceAddressGroup.classList.contains('hidden');
-            serviceAddressGroup.classList.toggle('hidden', !isHidden);
-        });
-    }
+    // Check for the injected config and show the service address group if true
+    if (window.SHOW_SERVICE_ADDRESS_CONFIG === true && serviceAddressGroup) {
+        serviceAddressGroup.classList.remove('hidden');
+        console.log("Service address configuration section is enabled by environment variable.");
+    } 
 
     if (generateLinkButton) { 
         generateLinkButton.addEventListener('click', validateConfigurationAndGenerateUrl); 

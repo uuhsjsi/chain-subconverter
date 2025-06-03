@@ -38,6 +38,10 @@ logger.addHandler(console_handler)
 PORT = int(os.getenv("PORT", 11200))
 # 新增：读取SSL验证配置的环境变量
 REQUESTS_SSL_VERIFY_CONFIG = os.getenv("REQUESTS_SSL_VERIFY", "true").lower()
+# 新增：读取是否显示服务地址配置区块的环境变量
+env_value = os.getenv("SHOW_SERVICE_ADDRESS_CONFIG", "false").lower()
+SHOW_SERVICE_ADDRESS_CONFIG_ENV = env_value == "true" or env_value == "1"
+
 
 REGION_KEYWORD_CONFIG = [
     {"id": "HK", "name": "Hong Kong", "keywords": ["HK", "HongKong", "Hong Kong", "香港", "🇭🇰"]},
@@ -47,7 +51,7 @@ REGION_KEYWORD_CONFIG = [
     {"id": "TW", "name": "Taiwan", "keywords": ["TW", "Taiwan", "台湾", "🇼🇸"]},
     {"id": "KR", "name": "Korea", "keywords": ["KR", "Korea", "韩国", "🇰🇷"]},
 ]
-LANDING_NODE_KEYWORDS = ["Landing", "落地"] 
+LANDING_NODE_KEYWORDS = ["Landing", "落地"]
 
 yaml = YAML()
 yaml.preserve_quotes = True
@@ -68,7 +72,7 @@ def _add_log_entry(logs_list, level, message, an_exception=None):
         logger.warning(message)
     elif level.upper() == "DEBUG":
         logger.debug(message)
-    else: 
+    else:
         logger.info(message)
 
 # --- 核心逻辑函数 ---
@@ -79,7 +83,7 @@ def apply_node_pairs_to_config(config_object, node_pairs_list):
     if not isinstance(config_object, dict):
         _add_log_entry(logs, "error", "无效的配置对象：不是一个字典。")
         return False, config_object, logs
-        
+
     proxies = config_object.get("proxies")
     proxy_groups = config_object.get("proxy-groups")
 
@@ -88,12 +92,12 @@ def apply_node_pairs_to_config(config_object, node_pairs_list):
         return False, config_object, logs
     if "proxy-groups" in config_object and not isinstance(proxy_groups, list):
         _add_log_entry(logs, "warn", "配置对象中的 'proxy-groups' 部分无效（不是列表），可能会影响组操作。")
-        proxy_groups = [] 
+        proxy_groups = []
 
     applied_count = 0
     for landing_name, front_name in node_pairs_list:
         _add_log_entry(logs, "debug", f"尝试应用节点对: 落地='{landing_name}', 前置='{front_name}'.")
-        
+
         landing_node_found = False
         for proxy_node in proxies:
             if isinstance(proxy_node, dict) and proxy_node.get("name") == landing_name:
@@ -111,8 +115,8 @@ def apply_node_pairs_to_config(config_object, node_pairs_list):
                                     _add_log_entry(logs, "info", f"已从前置组 '{front_name}' 的节点列表中移除落地节点 '{landing_name}'。")
                                 except ValueError:
                                     _add_log_entry(logs, "warn", f"尝试从前置组 '{front_name}' 移除落地节点 '{landing_name}' 时失败 (ValueError)。")
-                            break 
-                break 
+                            break
+                break
 
         if not landing_node_found:
             _add_log_entry(logs, "warn", f"节点对中的落地节点 '{landing_name}' 未在 'proxies' 列表中找到，已跳过此对。")
@@ -125,10 +129,10 @@ def apply_node_pairs_to_config(config_object, node_pairs_list):
             failed_count = len(node_pairs_list) - applied_count
             _add_log_entry(logs, "warn", f"节点对应用部分成功：成功 {applied_count} 个，失败 {failed_count} 个 (共 {len(node_pairs_list)} 个)。失败的节点对因无法匹配而被跳过。请核对节点名称或查看日志。")
             return False, config_object, logs
-        else:  
+        else:
             _add_log_entry(logs, "info", f"成功应用所有 {applied_count} 个节点对。")
             return True, config_object, logs
-    else: 
+    else:
         _add_log_entry(logs, "info", "没有提供节点对进行应用，配置未修改。")
         return True, config_object, logs
 
@@ -140,11 +144,11 @@ def _keyword_match(text_to_search, keyword_to_find):
     if re.search(r'[a-zA-Z]', keyword_to_find):
         pattern_str = r'(?<![a-zA-Z])' + re.escape(keyword_lower) + r'(?![a-zA-Z])'
         try:
-            if re.search(pattern_str, text_lower): 
+            if re.search(pattern_str, text_lower):
                 return True
         except re.error as e:
-            logger.debug(f"Regex error during keyword match for keyword '{keyword_to_find}': {e}") 
-            pass 
+            logger.debug(f"Regex error during keyword match for keyword '{keyword_to_find}': {e}")
+            pass
     else:
         if keyword_lower in text_lower:
             return True
@@ -158,11 +162,11 @@ def perform_auto_detection(config_object, region_keyword_config, landing_node_ke
         _add_log_entry(logs, "error", "无效的配置对象：不是一个字典。")
         return [], logs
     proxies = config_object.get("proxies")
-    proxy_groups = config_object.get("proxy-groups") 
+    proxy_groups = config_object.get("proxy-groups")
     if not isinstance(proxies, list):
         _add_log_entry(logs, "error", "配置对象中缺少有效的 'proxies' 列表，无法进行自动检测。")
         return [], logs
-    if not isinstance(proxy_groups, list): 
+    if not isinstance(proxy_groups, list):
         _add_log_entry(logs, "warn", "'proxy-groups' 部分缺失或无效，自动检测前置组的功能将受影响。")
     for proxy_node in proxies:
         if not isinstance(proxy_node, dict):
@@ -186,7 +190,7 @@ def perform_auto_detection(config_object, region_keyword_config, landing_node_ke
             for r_kw in region_def.get("keywords", []):
                 if _keyword_match(proxy_name, r_kw):
                     matched_region_ids.add(region_def.get("id"))
-                    break 
+                    break
         if not matched_region_ids:
             _add_log_entry(logs, "warn", f"落地节点 '{proxy_name}': 未能识别出任何区域。跳过此节点。")
             continue
@@ -204,7 +208,7 @@ def perform_auto_detection(config_object, region_keyword_config, landing_node_ke
             _add_log_entry(logs, "error", f"内部错误：区域ID '{target_region_id}' 未找到对应的关键字列表。跳过落地节点 '{proxy_name}'.")
             continue
         found_dialer_name = None
-        if isinstance(proxy_groups, list): 
+        if isinstance(proxy_groups, list):
             matching_groups = []
             for group in proxy_groups:
                 if not isinstance(group, dict): continue
@@ -213,14 +217,14 @@ def perform_auto_detection(config_object, region_keyword_config, landing_node_ke
                 for r_kw in target_region_keywords_for_dialer_search:
                     if _keyword_match(group_name, r_kw):
                         matching_groups.append(group_name)
-                        break 
+                        break
             if len(matching_groups) == 1:
                 found_dialer_name = matching_groups[0]
                 _add_log_entry(logs, "info", f"落地节点 '{proxy_name}': 在区域 '{target_region_id}' 找到唯一匹配的前置组: '{found_dialer_name}'.")
             elif len(matching_groups) > 1:
                 _add_log_entry(logs, "error", f"落地节点 '{proxy_name}': 在区域 '{target_region_id}' 找到多个匹配的前置组 {matching_groups}，无法自动选择。跳过此节点。")
-                continue 
-            else: 
+                continue
+            else:
                 _add_log_entry(logs, "info", f"落地节点 '{proxy_name}': 在区域 '{target_region_id}' 未找到匹配的前置组。将尝试查找节点。")
         else:
             _add_log_entry(logs, "debug", "跳过查找前置组，因为 'proxy-groups' 缺失或无效。")
@@ -229,25 +233,25 @@ def perform_auto_detection(config_object, region_keyword_config, landing_node_ke
             for candidate_proxy in proxies:
                 if not isinstance(candidate_proxy, dict): continue
                 candidate_name = candidate_proxy.get("name")
-                if not candidate_name or candidate_name == proxy_name: 
+                if not candidate_name or candidate_name == proxy_name:
                     continue
                 for r_kw in target_region_keywords_for_dialer_search:
                     if _keyword_match(candidate_name, r_kw):
                         matching_nodes.append(candidate_name)
-                        break 
+                        break
             if len(matching_nodes) == 1:
                 found_dialer_name = matching_nodes[0]
                 _add_log_entry(logs, "info", f"落地节点 '{proxy_name}': 在区域 '{target_region_id}' 找到唯一匹配的前置节点: '{found_dialer_name}'.")
             elif len(matching_nodes) > 1:
                 _add_log_entry(logs, "error", f"落地节点 '{proxy_name}': 在区域 '{target_region_id}' 找到多个匹配的前置节点 {matching_nodes}，无法自动选择。跳过此节点。")
-                continue 
-            else: 
+                continue
+            else:
                  _add_log_entry(logs, "warn", f"落地节点 '{proxy_name}': 在区域 '{target_region_id}' 也未能找到匹配的前置节点。")
         if found_dialer_name:
             suggested_pairs.append({"landing": proxy_name, "front": found_dialer_name})
             _add_log_entry(logs, "info", f"成功为落地节点 '{proxy_name}' 自动配置前置为 '{found_dialer_name}'.")
     _add_log_entry(logs, "info", f"自动节点对检测完成，共找到 {len(suggested_pairs)} 对建议。")
-    if not suggested_pairs and len(proxies) > 0: 
+    if not suggested_pairs and len(proxies) > 0:
         _add_log_entry(logs, "warn", "未自动检测到任何可用的节点对。请检查节点命名是否符合预设的关键字规则，或调整关键字配置。")
     return suggested_pairs, logs
 
@@ -260,7 +264,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(http_status_code)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(response_body)))
-            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate") 
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
             self.end_headers()
             self.wfile.write(response_body)
         except Exception as e:
@@ -274,8 +278,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(response_body)))
                 self.end_headers()
                 self.wfile.write(response_body)
-            except: 
-                self.send_response(500) 
+            except:
+                self.send_response(500)
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.end_headers()
                 self.wfile.write(b"Critical server error during response generation.")
@@ -290,10 +294,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 _add_log_entry(logs_list_ref, "error", f"仅支持 http 或 https 协议的远程 URL。") # 修改：移除 remote_url 变量
                 return None
             _add_log_entry(logs_list_ref, "warn", f"服务配置为允许从任意 http/https 域名获取订阅。请务必注意相关的安全风险 (如 SSRF)。") #
-        except Exception as e: 
+        except Exception as e:
             _add_log_entry(logs_list_ref, "error", f"解析提供的远程 URL 时发生基本错误: {e}", e) # 修改：移除 remote_url 变量
             return None
-        
+
         # 根据环境变量确定 verify 参数的值
         ssl_verify_value = True # 默认值
         if REQUESTS_SSL_VERIFY_CONFIG == "false":
@@ -328,10 +332,10 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         except requests.Timeout:
             _add_log_entry(logs_list_ref, "error", f"请求远程订阅超时 (URL provided).") #
             return None
-        except requests.RequestException as e: 
+        except requests.RequestException as e:
             _add_log_entry(logs_list_ref, "error", f"请求远程订阅发生错误 (URL provided): {e}", e) #
             return None
-        except Exception as e: 
+        except Exception as e:
             _add_log_entry(logs_list_ref, "error", f"处理远程订阅内容时出错 (URL provided): {e}", e) #
             return None
 
@@ -349,9 +353,9 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                     return
 
                 post_body = self.rfile.read(content_length)
-                _add_log_entry(request_logs, "debug", f"收到的原始POST数据: {post_body[:200]}") 
+                _add_log_entry(request_logs, "debug", f"收到的原始POST数据: {post_body[:200]}")
                 data = json.loads(post_body.decode('utf-8'))
-                
+
                 remote_url = data.get("remote_url")
                 node_pairs_from_request = data.get("node_pairs", [])
                 if not isinstance(node_pairs_from_request, list):
@@ -366,11 +370,11 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                         node_pairs_tuples.append((str(pair_dict["landing"]), str(pair_dict["front"])))
                     else:
                         _add_log_entry(request_logs, "warn", f"提供的节点对 '{pair_dict}' 格式不正确，已跳过。")
-                
+
                 _add_log_entry(request_logs, "info", f"开始验证配置 (URL provided), 节点对数量={len(node_pairs_tuples)}")
 
                 config_object = self._get_config_from_remote(remote_url, request_logs)
-                if config_object is None: 
+                if config_object is None:
                     # _get_config_from_remote already added specific error to request_logs
                     client_message = "无法获取或解析远程配置以进行验证。"
                     if request_logs:
@@ -384,7 +388,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
 
                 # config_object is valid, now try to apply pairs
                 success, _, apply_logs_from_func = apply_node_pairs_to_config(config_object, node_pairs_tuples)
-                
+
                 if success:
                     request_logs.extend(apply_logs_from_func) # Add apply logs for successful case
                     _add_log_entry(request_logs, "info", "配置验证成功。")
@@ -392,16 +396,16 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                 else:
                     # Apply failed, determine the message from apply_logs_from_func
                     client_message = "节点对应用配置失败，详情请查看日志。" # Default
-                    if apply_logs_from_func: 
+                    if apply_logs_from_func:
                         reason_from_apply = next((log_entry['message'] for log_entry in reversed(apply_logs_from_func) if log_entry['level'] in ['ERROR', 'WARN']), None)
                         if reason_from_apply:
                             client_message = reason_from_apply # This will be like "节点对应用部分成功..."
-                    
+
                     request_logs.extend(apply_logs_from_func) # Add logs from the apply function
                     _add_log_entry(request_logs, "error", "配置验证因节点对应用问题判定为失败。") # Overall server-side status log
-                    
+
                     self.send_json_response({"success": False, "message": client_message, "logs": request_logs}, 400)
-            
+
             except json.JSONDecodeError as e:
                 _add_log_entry(request_logs, "error", f"解析请求体JSON时出错: {e}", e)
                 self.send_json_response({"success": False, "message": "请求体JSON格式错误。", "logs": request_logs}, 400)
@@ -418,7 +422,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed_url = urlparse(self.path)
         query_params = parse_qs(parsed_url.query)
-        request_logs = [] 
+        request_logs = []
 
         if parsed_url.path == "/api/auto_detect_pairs":
             remote_url = query_params.get('remote_url', [None])[0]
@@ -432,19 +436,19 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                     if reason:
                         client_message_auto_detect = reason
                 self.send_json_response({
-                    "success": False, 
+                    "success": False,
                     "message": client_message_auto_detect,
-                    "suggested_pairs": [], 
+                    "suggested_pairs": [],
                     "logs": request_logs
-                }, 400) 
+                }, 400)
                 return
 
             suggested_pairs, detect_logs = perform_auto_detection(config_object, REGION_KEYWORD_CONFIG, LANDING_NODE_KEYWORDS)
             request_logs.extend(detect_logs)
-            
-            success_flag = True if suggested_pairs else False 
+
+            success_flag = True if suggested_pairs else False
             final_message = f"自动检测完成，找到 {len(suggested_pairs)} 对。" if success_flag else "自动检测未找到可用节点对。"
-            if not success_flag and request_logs: 
+            if not success_flag and request_logs:
                 relevant_log_msg = next((log_item['message'] for log_item in reversed(detect_logs) if log_item['level'] == 'WARN'), None)
                 if relevant_log_msg: # Append warning if detection failed and there's a relevant warning
                     final_message += f" {relevant_log_msg}"
@@ -458,7 +462,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         elif parsed_url.path == "/subscription.yaml":
             remote_url = query_params.get('remote_url', [None])[0]
             manual_pairs_str = unquote(query_params.get('manual_pairs', [''])[0])
-            
+
             node_pairs_list = []
             if manual_pairs_str:
                 pairs = manual_pairs_str.split(',')
@@ -469,7 +473,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                         node_pairs_list.append((parts[0].strip(), parts[1].strip()))
                     else:
                         _add_log_entry(request_logs, "warn", f"解析 'manual_pairs' 中的 '{pair_str}' 格式不正确，已跳过。")
-            
+
             _add_log_entry(request_logs, "info", f"收到 /subscription.yaml 请求 (URL provided), manual_pairs='{manual_pairs_str}' (解析后 {len(node_pairs_list)} 对)")
 
             config_object = self._get_config_from_remote(remote_url, request_logs)
@@ -504,7 +508,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
                         client_error_detail = reason
                 _add_log_entry(request_logs, "error", "应用节点对到配置时失败（/subscription.yaml）。") # Server-side log
                 self.send_error_response(f"错误: {client_error_detail}", 400)
-        
+
         elif parsed_url.path == "/" or parsed_url.path == "/frontend.html":
             self.serve_static_file("frontend.html", "text/html; charset=utf-8")
         elif parsed_url.path == "/script.js":
@@ -537,6 +541,30 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
         try:
             with open(file_path, "rb") as f:
                 content_to_serve = f.read()
+
+            if file_name == "frontend.html":
+                logger.debug(f"Modifying frontend.html to inject SHOW_SERVICE_ADDRESS_CONFIG: {SHOW_SERVICE_ADDRESS_CONFIG_ENV}")
+                html_content_str = content_to_serve.decode('utf-8')
+                js_config_script = f"<script>window.SHOW_SERVICE_ADDRESS_CONFIG = {str(SHOW_SERVICE_ADDRESS_CONFIG_ENV).lower()};</script>"
+                # Insert before closing </head> tag
+                insertion_point = html_content_str.find("</head>")
+                if insertion_point != -1:
+                    html_content_str = html_content_str[:insertion_point] + js_config_script + html_content_str[insertion_point:]
+                else:
+                    logger.warning("</head> tag not found in frontend.html, config script not injected near head. Trying before body.")
+                    insertion_point_body = html_content_str.find("<body")
+                    if insertion_point_body != -1: # find opening body tag
+                         # find where that tag ends
+                        end_of_body_tag = html_content_str.find(">",insertion_point_body)
+                        if end_of_body_tag != -1:
+                             html_content_str = html_content_str[:end_of_body_tag+1] + js_config_script + html_content_str[end_of_body_tag+1:]
+                        else: # fallback if body tag is weirdly formatted
+                             html_content_str = js_config_script + html_content_str # prepend
+                    else: # ultimate fallback
+                        html_content_str = js_config_script + html_content_str # prepend
+                content_to_serve = html_content_str.encode('utf-8')
+
+
             logger.info(f"正在提供静态文件: {file_path} 类型: {content_type}")
             self.send_response(200)
             self.send_header("Content-Type", content_type)
@@ -550,7 +578,7 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error_response(f"提供文件时出错: {e}", 500)
 
     def send_error_response(self, message, code=500):
-        logger.info(f"发送错误响应: code={code}, message='{message}'") 
+        logger.info(f"发送错误响应: code={code}, message='{message}'")
         self.send_response(code)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
@@ -572,12 +600,13 @@ if __name__ == "__main__":
             logger.error(f"无法创建日志目录 {LOG_DIR}: {e}", exc_info=True)
 
     logger.info(f"正在启动服务，端口号: {PORT}...")
+    logger.info(f"服务地址配置区块显示状态: {'启用' if SHOW_SERVICE_ADDRESS_CONFIG_ENV else '禁用'}")
     script_dir = os.path.dirname(os.path.abspath(__file__))
     logger.info(f"脚本所在目录: {script_dir}")
     logger.info(f"前端文件 frontend.html 预期路径: {os.path.join(script_dir, 'frontend.html')}")
     logger.info(f"前端脚本 script.js 预期路径: {os.path.join(script_dir, 'script.js')}")
 
-    mimetypes.init() 
+    mimetypes.init()
 
     httpd = ThreadingHTTPServer(("", PORT), CustomHandler)
     logger.info(f"服务已启动于 http://0.0.0.0:{PORT}")

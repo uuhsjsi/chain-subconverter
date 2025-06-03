@@ -11,6 +11,7 @@ ENV LOG_LEVEL="INFO"
 # Default SSL verification for outgoing requests, can be overridden by REQUESTS_SSL_VERIFY env var at runtime
 # Valid values: "true", "false", or a path to a CA bundle.
 ENV REQUESTS_SSL_VERIFY="true"
+ENV SHOW_SERVICE_ADDRESS_CONFIG="false" # Default to false, set to "true" to show the service address config section
 
 # Set the working directory in the container
 WORKDIR /app

@@ -3,16 +3,16 @@ name: Build and Push Docker Image to GHCR
 on:
   push:
     branches:
-      - "dev"    # 当代码推送到 dev 分支时触发
+      - "main"    # 当代码推送到 main 分支时触发
     tags:
       - 'v*.*.*' # 当推送形如 v1.0.0, v1.2.3 等版本标签时触发
   workflow_dispatch: # 允许手动触发
 
 jobs:
-  build-and-push-dev:
-    # 仅当推送到 dev 分支时运行此 job
-    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
-    name: Build and Push Dev Image
+  build-and-push-main:
+    # 仅当推送到 main 分支时运行此 job
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    name: Build and Push Main Image
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -37,22 +37,22 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Extract metadata (tags, labels) for Dev Docker Image
-        id: meta_dev
+      - name: Extract metadata (tags, labels) for Main Docker Image
+        id: meta_main
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/chain-subconverter
           tags: |
-            type=raw,value=dev  # 为最新的 dev 构建打上 'dev' 标签
-            type=sha,prefix=dev-,format=short # 为每个 dev 构建打上 'dev-<short-sha>' 标签, 例如 dev-a1b2c3d
+            type=raw,value=main  # 为最新的 dev 构建打上 'dev' 标签
+            type=sha,prefix=main-,format=short # 为每个 dev 构建打上 'dev-<short-sha>' 标签, 例如 dev-a1b2c3d
 
-      - name: Build and push Dev Docker image
+      - name: Build and push Main Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true # 推送开发镜像
-          tags: ${{ steps.meta_dev.outputs.tags }}
-          labels: ${{ steps.meta_dev.outputs.labels }}
+          tags: ${{ steps.meta_main.outputs.tags }}
+          labels: ${{ steps.meta_main.outputs.labels }}
           platforms: linux/amd64,linux/arm64 # 根据需要调整平台
           cache-from: type=gha
           cache-to: type=gha,mode=max
