@@ -93,6 +93,8 @@ jobs:
           tags: |
             type=semver,pattern={{version}} # 例如 Git 标签 v1.0.0 -> Docker 标签 1.0.0
             type=raw,value=dev-latest      # 将这个版本标签也同时标记为 'dev-latest'，用于Render部署
+          flavor: | # 添加或修改 flavor 配置
+            latest=false # 明确禁用自动添加 latest 标签
 
       - name: Build and push Versioned & Dev-Latest Docker image
         id: build_image_for_render
