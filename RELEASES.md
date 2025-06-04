@@ -7,6 +7,15 @@
 
 `chain-subconverter` v2.0+ 是一个重要的里程碑版本。本次更新的核心在于引入了一个全新的图形化前端配置界面，并对后端服务进行了无状态化重构。这些变更旨在提升用户体验的便捷性、部署的灵活性以及服务整体的维护性。相较于 [v1.0.0 版本](https://github.com/slackworker/chain-subconverter/releases/tag/v1.0.0)，新版本在交互方式和功能实现上均有显著改进。
 
+您可以通过以下链接在线预览和体验本项目：
+
+[➡️ 点击这里进行在线预览](https://chain-subconverter-latest.onrender.com/)
+
+**⚠️ 重要提醒：**
+* 以上仅供项目预览，不保证服务的稳定性。
+* 本项目完全开源，设计上不记录任何用户敏感信息。
+* **信别人不如信自己**，我们强烈建议每个人自行部署服务使用。[《部署指南》](Deployment-Guide.md)
+
 ## 主要变更 (Key Changes)
 
 * **引入前端用户界面 (Introduction of Frontend User Interface)**:
