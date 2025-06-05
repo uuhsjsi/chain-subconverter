@@ -46,6 +46,11 @@ docker run -d \
   --restart unless-stopped \
   ghcr.io/slackworker/chain-subconverter:latest
 ```
+* **重要提示**：某些终端可能不支持使用 `\` (反斜杠) 作为多行命令的连接符！如果遇到问题，请将命令中的 `\` 删除，并将所有内容合并为一行再执行：
+
+```bash
+docker run -d --name chain-subconverter -p 11200:11200 --restart unless-stopped ghcr.io/slackworker/chain-subconverter:latest
+```
 
 上述命令将在后台启动服务，并将您服务器的 11200 端口映射到容器。您可以修改 -p 参数的第一个 11200 来更改宿主机端口。默认情况下，日志级别为 INFO，SSL 验证为 true，自定义服务根地址为 false。
 
