@@ -79,6 +79,7 @@ docker run -d --name chain-subconverter -p 11200:11200 --restart unless-stopped 
 * 探索支持更多内核的链式配置功能。
 * UI/UX 持续改进。
 * 在**自动识别**中增加对前置节点相关关键字识别的功能。
+* 持续评估并优化镜像体积与资源占用，力求进一步降低（目前约 150MB 磁盘 / 25MB 内存）。
 
 <!-- ➡️ **更详细的未来计划，请参阅：[GitHub Wiki - 未来计划 (Todo List)](https://github.com/YOUR_USERNAME/YOUR_REPOSITORY/wiki/TODO)**  -->
 
