@@ -117,15 +117,19 @@ function createManualPairRowElement(index, landingValue = '', frontValue = '') {
     frontInput.value = frontValue;
     const addIconSvg = '<svg viewBox="0 0 24 24" fill="currentColor" style="width:1em;height:1em;display:block;margin:auto;"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>';
     const removeIconSvg = '<svg viewBox="0 0 24 24" fill="currentColor" style="width:1em;height:1em;display:block;margin:auto;"><path d="M19 13H5v-2h14v2z"/></svg>';
-    newRow.innerHTML = `
+    newRow.innerHTML = ` 
         <span class="row-number-cell">${index + 1}.</span>
         <div class="input-cell"></div>
-        <div class="dialer-proxy-label-cell">dialer-proxy:</div>
+        <div class="dialer-proxy-label-cell">
+            <span class="dialer-proxy-label-long">dialer-proxy</span>
+            <span class="dialer-proxy-label-short">:</span>
+        </div>
         <div class="input-cell"></div>
         <div class="actions-cell">
             <button type="button" class="action-button-inline add" title="在此行下方添加新行">${addIconSvg}</button>
             <button type="button" class="action-button-inline remove" title="删除此行">${removeIconSvg}</button>
         </div>`;
+
     newRow.querySelectorAll('.input-cell')[0].appendChild(landingInput);
     newRow.querySelectorAll('.input-cell')[1].appendChild(frontInput);
     newRow.querySelector('.action-button-inline.add').addEventListener('click', function() { addManualPairRow(newRow); });
@@ -497,6 +501,12 @@ async function validateConfigurationAndGenerateUrl() {
         showFeedback('错误：请至少配置并提交一对完整的节点对。', 'error', 6000);
         if(generateBtn) generateBtn.disabled = false;
         if(autoDetectBtn) autoDetectBtn.disabled = false;
+        // --- MODIFICATION START ---
+        const firstLandingInput = document.querySelector('#manualPairsInputsContainer .manual-pair-dynamic-row .landing-proxy-input');
+        if (firstLandingInput) {
+            firstLandingInput.focus();
+        }
+        // --- MODIFICATION END ---
         return;
     }
 

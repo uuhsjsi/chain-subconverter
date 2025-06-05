@@ -28,29 +28,110 @@
         h1 {
             text-align: center;
             margin-bottom: 24px;
-            font-size: 30px; /* Slightly larger for main title */
+            font-size: 30px; /* 桌面端默认大小 */
             display: flex;
             justify-content: center;
             align-items: baseline;
-            flex-wrap: wrap;
+            flex-wrap: wrap; /* 保持允许换行，作为字体调整无效时的最后手段 */
         }
 
         .main-title-text {
-            font-weight: 700; /* Bold for emphasis */
-            color: #2c3e50;  /* Modern, soft dark blue-gray */
-            font-size: 1.2em;  /* Slightly larger font size */
-            margin-right: 5px; /* Space between the two parts */
+            font-weight: 700;
+            color: #2c3e50;
+            font-size: 1.2em; /* 相对于 h1 的 font-size */
+            margin-right: 5px;
+            white-space: nowrap; /* 优先尝试不换行 */
         }
 
         .h1-suffix {
             font-family: "Segoe UI", sans-serif;
-            font-size: 0.75em; /* Smaller for subheading */
-            color: #888;      /* Light gray to de-emphasize */
-            font-weight: 400;  /* Normal weight */
+            font-size: 0.75em; /* 相对于 h1 的 font-size */
+            color: #888;
+            font-weight: 400;
             letter-spacing: 0.5px;
             margin-left: 5px;
+            white-space: nowrap; /* 优先尝试不换行 */
         }
 
+        /* --- 针对移动端优化的CSS (断点 <= 500px) --- */
+        @media (max-width: 640px) {
+            h1 {
+                font-size: 26px;
+            }
+            /* --- 1. 链式配置区域优化 --- */
+
+            /* 将 "dialer-proxy:" 标签显示为 ":" */
+            .manual-pair-dynamic-row .dialer-proxy-label-long {
+                display: none; /* 隐藏 "dialer-proxy:" 文本 */
+            }
+            .manual-pair-dynamic-row .dialer-proxy-label-short {
+                display: inline; /* 显示 ":" 文本 */
+            }
+            /* 对仅显示冒号的标签单元格进行微调内边距，以避免占用过多不必要的空间 */
+            /* 原有 .dialer-proxy-label-cell padding: 0 5px; font-size: 0.9em; */
+            .manual-pair-dynamic-row .dialer-proxy-label-cell {
+                padding-left: 2px;  /* 调整内边距 */
+                padding-right: 2px; /* 调整内边距 */
+                /* font-size: 0.9em; /* 保持原有字体大小 */
+            }
+
+            /* 将 +/- 操作按钮垂直堆叠 */
+            .manual-pair-dynamic-row .actions-cell {
+                flex-direction: column; /* 使按钮垂直排列 */
+                gap: 4px;               /* 按钮之间的垂直间距, 可按需调整 */
+            }
+            /* 调整堆叠后的 +/- 按钮样式 */
+            /* 原有 .action-button-inline padding: 4px 8px; font-size: 0.9em; */
+            .manual-pair-dynamic-row .actions-cell .action-button-inline {
+                width: 28px;  /* 设置一个较小的固定宽度以适应图标 */
+                height: 24px; /* 设置一个较小的固定高度以适应图标 */
+                padding: 0;   /* 移除内边距，因为SVG有自己的边距控制 */
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                /* font-size: 0.9em; /* 保持原有字体大小, SVG大小会受此影响 */
+            }
+
+            /* --- 2. “自动识别”按钮优化 --- */
+            /* 使按钮文本 "🔍 自动识别" 变为三行垂直排列 */
+            /* --- 2. “自动识别”按钮优化 --- */
+            /* 使按钮文本 "🔍 自动识别" 变为三行垂直排列 */
+            #autoDetectButton {
+                /* 1. 隐藏原始按钮文本，并使其不占用空间 */
+                font-size: 0 !important; /* 强制原始文本字体大小为0，使其不可见且不占空间 */
+                line-height: 0;          /* 进一步确保原始文本行不占用高度 */
+                color: transparent;      /* 使原始文本颜色透明（作为辅助措施） */
+                
+                /* 2. 覆盖原始按钮的 white-space 和 padding，因为伪元素将接管 */
+                white-space: normal;     /* 覆盖 .button-action-aux 的 nowrap */
+                padding: 0;              /* 移除按钮自身的内边距，将由伪元素处理 */
+                
+                /* 可选: 如果需要，可以保留或设置最小宽度 */
+                min-width: 60px;
+            }
+
+            #autoDetectButton::before {
+                /* 1. 设置伪元素内容为三行文本 */
+                content: "🔍\A自动\A识别"; /* \A 代表换行符 */
+                display: block;            /* 使伪元素表现为块级元素，能够撑开父元素高度 */
+                white-space: pre-line;     /* 解析 \A 换行符，并处理空格 */
+                
+                /* 2. 恢复并设置文本样式，应与 .button-action-aux 中的定义匹配 */
+                /* 重要：此处 font-size 必须使用绝对单位（如 px 或 rem），
+                    因为父按钮 #autoDetectButton 的 font-size 被设为 0。
+                    假设 .button-action-aux 的 0.95em 在其上下文中计算为 15px。*/
+                font-size: 15px;           /* 请替换为实际计算的像素值 */
+                font-weight: 500;          /* 匹配 .button-action-aux 的 font-weight */
+                color: #1f2937;            /* 匹配 .button-action-aux 的 color */
+                
+                /* 3. 设置适合三行文本的行高和对齐方式 */
+                line-height: 1.3;          /* 可根据视觉效果调整 */
+                text-align: center;
+                
+                /* 4. 在伪元素内部重新应用按钮的原始内边距，以保持视觉一致性 */
+                padding: 8px 12px;         /* 这是 .button-action-aux 的原始内边距 */
+            }
+        }
 
         .config-area, .response-area {
             width: 100%;
@@ -175,6 +256,7 @@
             margin-top: 8px;
             padding-top: 8px;
         }
+
         .manual-pair-dynamic-row {
             display: flex;
             align-items: center;
@@ -206,6 +288,7 @@
             line-height: 1;
             transition: background-color 0.2s ease, border-color 0.2s ease;
         }
+        
         .action-button-inline:hover:not(:disabled) { 
             background-color: #e9ecef; 
             border-color: #cbd5e1;
@@ -287,6 +370,7 @@
             font-weight: 500;
             font-size: 0.95em;
             transition: background-color 0.2s ease, color 0.2s ease;
+            white-space: nowrap;
         }
 
         .button-action-aux:hover:not(:disabled) {
@@ -366,13 +450,13 @@
 
     <div class="config-area">
         <div class="sub-section" id="subscriptionLinkGroup">
-            <label for="remoteUrl" class="form-label">原始订阅链接</label>
+            <label for="remoteUrl" class="form-label">原订阅链接</label>
             <input type="url" id="remoteUrl" placeholder="请输入包含落地与前置节点的YAML订阅链接" required>
             <small class="input-description">建议使用订阅转换服务合并生成；如使用OpenClash，可在更新订阅后的插件日志中找到合并后的URL。</small>
         </div>
 
         <div class="sub-section" id="dialerConfigGroup">
-            <label class="form-label">链式节点对配置</label>
+            <label class="form-label">链式配置</label>
             <div id="manualPairsSection">
                 <div id="manualPairsInputsContainer">
                     </div>
@@ -402,7 +486,7 @@
             </div>
         </div>
 
-        <button id="generateLinkButton" class="button-primary">🔄 生成配置链接</button>
+        <button id="generateLinkButton" class="button-primary">🔄 生成</button>
     </div>
 
     <div class="response-area">
